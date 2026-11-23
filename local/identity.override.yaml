@@ -1,0 +1,24 @@
+# LOCAL ONLY: changes to ../identity/compose.yaml so authentik's look comes from the sibling
+# SharedUI working copy (its brand/ folder) instead of a tagged SharedUI release, so a palette
+# change can be tested before it's released. Pulled in by compose.yaml's `include`. Paths here
+# resolve from ../identity, the first file of the include, not from this folder.
+x-sharedui-brand: &sharedui-brand
+  build:
+    context: ./authentik
+    additional_contexts:
+      # Replaces the Dockerfile's sharedui-brand stage (the download) with this folder.
+      sharedui-brand: ../../SharedUI/brand
+
+# Fixed container names for the local stack (see compose.yaml).
+services:
+  authentik-db:
+    container_name: authentik-db
+  authentik-server:
+    <<: *sharedui-brand
+    container_name: authentik
+  authentik-worker:
+    <<: *sharedui-brand
+    container_name: authentik-worker
+  authentik-settings:
+    <<: *sharedui-brand
+    container_name: authentik-settings

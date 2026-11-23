@@ -1,0 +1,72 @@
+/* authentik's pages in the look of the sites (their dark colours): near-black background,
+   surface cards, blue primary. authentik adds this to every page and component as the brand's
+   custom CSS (blueprint: brand.branding_custom_css). [[dark.<name>]] is filled in from
+   palette.json when the image builds (render-brand.mjs), so don't write colours here. */
+
+/* No stock photo: the brand's background is brand/background.svg (the canvas with a faint dot
+   grid, like the sites' hero). This colour shows while it loads. */
+body {
+  background-color: [[dark.background]];
+}
+
+/* PatternFly tokens authentik is built on. */
+:root,
+:host {
+  --pf-global--primary-color--100: [[dark.primary]];
+  --pf-global--primary-color--200: [[dark.primary-hover]];
+  --pf-global--primary-color--dark-100: [[dark.primary-hover]];
+  --pf-global--primary-color--light-100: [[dark.primary-ink]];
+  --pf-global--link--Color: [[dark.primary-ink]];
+  --pf-global--link--Color--hover: color-mix(in srgb, [[dark.primary-ink]], white 35%);
+  --pf-global--link--Color--dark: [[dark.primary-ink]];
+  --pf-global--link--Color--dark--hover: color-mix(in srgb, [[dark.primary-ink]], white 35%);
+  --pf-global--active-color--100: [[dark.primary]];
+  --pf-global--FontFamily--sans-serif:
+    "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --pf-global--FontFamily--heading--sans-serif: var(--pf-global--FontFamily--sans-serif);
+  --pf-global--FontFamily--redhatfont--sans-serif: var(--pf-global--FontFamily--sans-serif);
+  --pf-global--FontFamily--redhatfont--heading--sans-serif: var(--pf-global--FontFamily--sans-serif);
+}
+
+/* The card. */
+.pf-c-login__main {
+  background-color: [[dark.surface]];
+  border: 1px solid [[dark.border]];
+  border-radius: 1rem;
+  box-shadow: 0 24px 60px -24px rgb(0 0 0 / 0.6);
+  overflow: hidden;
+}
+.pf-c-login__main-header.pf-c-brand img,
+.pf-c-brand img {
+  max-height: 3rem;
+  width: auto;
+}
+.pf-c-title {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Inputs and buttons like the sites' .input and .btn. */
+.pf-c-form-control {
+  background-color: [[dark.background]];
+  border: 1px solid [[dark.border-strong]];
+  border-radius: 0.6rem;
+  --pf-c-form-control--BorderBottomColor: transparent;
+}
+.pf-c-form-control:focus {
+  border-color: [[dark.primary]];
+  outline: 2px solid color-mix(in srgb, [[dark.primary]] 40%, transparent);
+  outline-offset: 1px;
+}
+.pf-c-button {
+  border-radius: 0.75rem;
+  font-weight: 600;
+}
+.pf-c-button.pf-m-primary {
+  background-color: [[dark.primary]];
+  color: [[dark.on-primary]];
+}
+.pf-c-button.pf-m-primary:hover {
+  background-color: [[dark.primary-hover]];
+}

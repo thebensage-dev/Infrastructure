@@ -1,0 +1,9 @@
+modules:
+  # A site is "up" when it answers 2xx over valid HTTPS within 10 seconds.
+  http_site:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      follow_redirects: true
+      fail_if_not_ssl: true

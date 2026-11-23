@@ -1,0 +1,18 @@
+{% extends "email/site_base.html" %}
+{# Sent to the admins (ALERT_EMAIL_TO) for every new access request. #}
+{% block heading %}New access request{% endblock %}
+{% block heading_text %}New access request{% endblock %}
+{% block content %}
+<p style="margin: 0 0 14px 0;"><strong style="color: [[light.foreground]];">{{ name }}</strong> asked for access to the <strong style="color: [[light.foreground]];">{{ app_name }}</strong>.</p>
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="width: 100%; margin: 0 0 14px 0; background-color: [[light.surface-muted]]; border-radius: 10px;">
+  <tr><td style="padding: 12px 14px 4px 14px; font-size: 13px; color: [[light.foreground-muted]];">Email</td></tr>
+  <tr><td style="padding: 0 14px 8px 14px; color: [[light.foreground]];">{{ email }}</td></tr>
+  <tr><td style="padding: 4px 14px 4px 14px; font-size: 13px; color: [[light.foreground-muted]];">Username</td></tr>
+  <tr><td style="padding: 0 14px 8px 14px; color: [[light.foreground]];">{{ username }}</td></tr>
+  {% if reason %}
+  <tr><td style="padding: 4px 14px 4px 14px; font-size: 13px; color: [[light.foreground-muted]];">Reason</td></tr>
+  <tr><td style="padding: 0 14px 12px 14px; color: [[light.foreground]];">{{ reason }}</td></tr>
+  {% endif %}
+</table>
+<p style="margin: 0;">To approve, open the user in authentik and click <strong style="color: [[light.foreground]];">Activate</strong>. To refuse, delete the user.</p>
+{% endblock %}

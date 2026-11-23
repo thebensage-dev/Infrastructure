@@ -1,0 +1,29 @@
+# The sites hosted on this platform, in one place. The CI pipeline (.github/workflows/ci.yml)
+# reads it to:
+#   - build Grafana's site checks (MONITORED_SITES) from every `checks` entry, and
+#   - when run by hand with "Also redeploy the sites" ticked, start each site's own pipeline
+#     after the platform is deployed (each still asks for its own approval).
+# {domain} is the DOMAIN organization variable. To add a site: add it here,
+# give its repo the same deploy pipeline, and add its DNS record.
+sites:
+  - name: Portfolio
+    repo: thebensage-dev/Portfolio
+    checks:
+      - https://{domain}
+  - name: User Directory
+    repo: thebensage-dev/UserDirectory
+    checks:
+      - https://users.{domain}
+  - name: Storybook
+    repo: thebensage-dev/SharedUI
+    checks:
+      - https://ui.{domain}
+  - name: API
+    repo: thebensage-dev/Api
+    checks:
+      # Also checks its PostgreSQL.
+      - https://api.{domain}/health
+
+# Checked too, but deployed by this repo: authentik's readiness (it also covers its database).
+platform_checks:
+  - https://id.{domain}/-/health/ready/

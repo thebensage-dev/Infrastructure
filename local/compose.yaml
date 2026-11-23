@@ -1,0 +1,136 @@
+# LOCAL ONLY: every site behind one Caddy proxy, built from the sibling repos. Never deploy
+# this to Coolify, where each site is its own app. Usage and URLs: README, "Running all the
+# sites locally". It expects the five repos as sibling folders.
+# The Compose project: Docker Desktop groups the containers under it, and the volumes are named
+# server_<volume>. Docker only accepts lowercase project names.
+name: server
+
+# Every container has a fixed, readable name (container_name), here and in the two override files,
+# instead of Compose's <project>-<service>-1. Local only: on the VPS Coolify names the containers
+# itself, so the deployed compose files in ../identity and ../monitoring don't set them.
+
+# Grafana and Prometheus (../monitoring) and authentik (../identity) run here too, adjusted for local
+# use by monitoring.override.yaml, monitoring.env, identity.override.yaml (authentik's look from
+# the sibling SharedUI/brand folder) and identity.env. authentik also reads .env for the
+# admin password. Its blueprints create the Grafana and User Directory sign-in apps on start, with
+# the local placeholder secrets below, so sign-in works with no setup.
+include:
+  - path:
+      - ../monitoring/compose.yaml
+      - ./monitoring.override.yaml
+    env_file: [./monitoring.env, ./.env]
+  - path:
+      - ../identity/compose.yaml
+      - ./identity.override.yaml
+    env_file: [./identity.env, ./.env]
+
+services:
+  proxy:
+    container_name: proxy
+    image: caddy:2-alpine
+    ports:
+      - "${PROXY_PORT:-8080}:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - portfolio
+      - user-directory
+      - storybook
+      - api
+    restart: unless-stopped
+
+  portfolio:
+    container_name: portfolio
+    build:
+      context: ../../Portfolio
+      secrets: [NODE_AUTH_TOKEN]
+    environment:
+      USER_DIRECTORY_URL: http://users.localhost:${PROXY_PORT:-8080}
+      API_URL: http://api.localhost:${PROXY_PORT:-8080}
+      # Inside Docker, api.localhost is this container; the API reference fetches the spec here.
+      API_INTERNAL_URL: http://api:8080
+      STORYBOOK_URL: http://ui.localhost:${PROXY_PORT:-8080}
+      SITE_URL: http://localhost:${PROXY_PORT:-8080}
+      # Sign-in through the local authentik (unlocks the colour palette). The client is created
+      # by authentik's blueprint with the same placeholder secret (identity.env).
+      OIDC_ISSUER_URL: http://id.localhost:${PROXY_PORT:-8080}/application/o/portfolio/
+      OIDC_INTERNAL_URL: http://authentik-server:9000
+      OIDC_CLIENT_ID: portfolio
+      OIDC_CLIENT_SECRET: local-only-not-a-secret-portfolio-oidc
+      AUTH_SECRET: local-only-not-a-secret-portfolio-session-key
+      # The public Grafana "Live status" link; Grafana shares it on start with the
+      # STATUS_ACCESS_TOKEN from monitoring.env.
+      STATUS_URL: http://grafana.localhost:${PROXY_PORT:-8080}/public-dashboards/10ca1000000000000000000000000000
+    restart: unless-stopped
+
+  user-directory:
+    container_name: user-directory
+    build:
+      context: ../../UserDirectory
+      secrets: [NODE_AUTH_TOKEN]
+    depends_on:
+      - api
+    environment:
+      # The People API below holds the data (and adds the demo people).
+      API_URL: http://api:8080
+      # Sign-in through the local authentik, needed to add, edit or delete. The client is created
+      # by authentik's blueprint with the same placeholder secret (identity.env).
+      APP_URL: http://users.localhost:${PROXY_PORT:-8080}
+      OIDC_ISSUER_URL: http://id.localhost:${PROXY_PORT:-8080}/application/o/user-directory/
+      # Inside Docker, id.localhost is the container itself; server-to-server calls use this.
+      OIDC_INTERNAL_URL: http://authentik-server:9000
+      OIDC_CLIENT_ID: user-directory
+      OIDC_CLIENT_SECRET: local-only-not-a-secret-user-directory-oidc
+      # Footer links to the main site's privacy notice and terms.
+      MAIN_SITE_URL: http://localhost:${PROXY_PORT:-8080}
+      # Encrypts the session cookie. Local only; production sets its own in Coolify.
+      AUTH_SECRET: local-only-not-a-secret-user-directory-session-key
+    restart: unless-stopped
+
+  storybook:
+    container_name: storybook
+    # Static Storybook served by Caddy on :80. Its build needs no token.
+    build: ../../SharedUI
+    restart: unless-stopped
+
+  api:
+    container_name: api
+    # The .NET API (../../Api), with its own PostgreSQL below. Its build needs no token.
+    build: ../../Api
+    depends_on:
+      api-db:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Default: Host=api-db;Database=api;Username=api;Password=local-only-not-a-secret-api-db
+      SEED_DEMO_DATA: "true"
+      # Writes need a token from the local authentik: its "api" client (the docs' sign-in, created
+      # by the blueprint) or the User Directory's.
+      Auth__Authority: http://id.localhost:${PROXY_PORT:-8080}/application/o/
+      # Inside Docker, id.localhost is the container itself; server-to-server calls use this.
+      Auth__InternalUrl: http://authentik-server:9000
+    restart: unless-stopped
+
+  api-db:
+    container_name: api-db
+    image: postgres:18.7-alpine
+    environment:
+      POSTGRES_DB: api
+      POSTGRES_USER: api
+      POSTGRES_PASSWORD: local-only-not-a-secret-api-db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d api -U api"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - api-db:/var/lib/postgresql
+    restart: unless-stopped
+
+secrets:
+  NODE_AUTH_TOKEN:
+    environment: NODE_AUTH_TOKEN
+
+volumes:
+  # Survives `docker compose down`; `docker compose down -v` wipes it.
+  api-db:

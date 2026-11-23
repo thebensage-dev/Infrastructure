@@ -1,0 +1,13 @@
+# Secrets: real values live in local .env files and in Coolify, never in git.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Editors, OS and logs
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

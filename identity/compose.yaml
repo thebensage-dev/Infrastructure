@@ -1,0 +1,135 @@
+# authentik: the single sign-in (OIDC) provider for Grafana, the User Directory, the API and later tools.
+# Deploy as its own Coolify app (Docker Compose build pack, base directory /identity).
+# In Coolify, set the domain of the "authentik-server" service to https://id.<your-domain>:9000
+# (the :9000 is the container port Coolify's proxy forwards to; it is not exposed publicly).
+#
+# Groups, the Grafana, User Directory and API applications, the guest invitation flow and login tweaks
+# are created on start from ./authentik/blueprints; the footer links by the authentik-settings
+# service. Client secrets and URLs come from the env vars below.
+#
+# The SERVICE_PASSWORD_* variables are Coolify "magic" variables: Coolify generates each one on
+# the first deploy, keeps it, and shows it under the app's Environment Variables. Locally they
+# come from ../local/identity.env. The admin password of `akadmin` is SERVICE_PASSWORD_AKADMIN.
+#
+# No Redis: since 2025.10 authentik keeps its cache, sessions and task queue in PostgreSQL.
+services:
+  authentik-db:
+    image: postgres:16.16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_AUTHENTIKDB}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d authentik -U authentik"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    volumes:
+      # Persistent volume: every user, group, passkey and application. Back it up.
+      - authentik_db:/var/lib/postgresql/data
+
+  authentik-server:
+    build: ./authentik
+    command: server
+    restart: unless-stopped
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    environment:
+      AUTHENTIK_SECRET_KEY: ${SERVICE_PASSWORD_64_AUTHENTIKSECRET}
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${SERVICE_PASSWORD_64_AUTHENTIKDB}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      # One web worker is plenty for a handful of people and saves about 250 MB of RAM.
+      AUTHENTIK_WEB__WORKERS: "1"
+      # Lets the access-request policies (run here) skip email when no SMTP server is set.
+      AUTHENTIK_EMAIL__HOST: ${SMTP_HOST:-}
+    shm_size: 512mb
+    expose:
+      - "9000"
+    volumes:
+      # Persistent volume: uploaded icons and logos.
+      - authentik_data:/data
+
+  authentik-worker:
+    build: ./authentik
+    command: worker
+    restart: unless-stopped
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    environment:
+      AUTHENTIK_SECRET_KEY: ${SERVICE_PASSWORD_64_AUTHENTIKSECRET}
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${SERVICE_PASSWORD_64_AUTHENTIKDB}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      # Read once, on the very first start: the password (and email) of the admin user `akadmin`.
+      # Changing them later does nothing; change the password in authentik instead.
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${SERVICE_PASSWORD_AKADMIN}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com}
+      # Read by the blueprints on every apply (start, file change, and hourly), so these win over
+      # edits made in the UI. The client secrets must match the ones set in Grafana's and the
+      # User Directory's own environment (in Coolify: one shared variable each).
+      GRAFANA_URL: ${GRAFANA_URL:?set GRAFANA_URL}
+      GRAFANA_OIDC_CLIENT_SECRET: ${GRAFANA_OIDC_CLIENT_SECRET:?set GRAFANA_OIDC_CLIENT_SECRET}
+      USER_DIRECTORY_URL: ${USER_DIRECTORY_URL:?set USER_DIRECTORY_URL}
+      USER_DIRECTORY_OIDC_CLIENT_SECRET: ${USER_DIRECTORY_OIDC_CLIENT_SECRET:?set USER_DIRECTORY_OIDC_CLIENT_SECRET}
+      PORTFOLIO_OIDC_CLIENT_SECRET: ${PORTFOLIO_OIDC_CLIENT_SECRET:?set PORTFOLIO_OIDC_CLIENT_SECRET}
+      # The API's docs page signs in from here (a public client, so no secret).
+      API_URL: ${API_URL:?set API_URL}
+      # The main site (Portfolio, client "portfolio"); also linked from the sign-up forms.
+      MAIN_SITE_URL: ${MAIN_SITE_URL:?set MAIN_SITE_URL}
+      AUTHENTIK_BRAND_TITLE: ${AUTHENTIK_BRAND_TITLE:-TheBensage}
+      # Email, with the same SMTP account and variables as Grafana's alerts (the worker sends it):
+      # "we've got your request" and "you're in" to people asking for access, and each new request
+      # to ALERT_EMAIL_TO. Without SMTP_HOST nothing is emailed; admins still see the bell.
+      AUTHENTIK_EMAIL__HOST: ${SMTP_HOST:-}
+      AUTHENTIK_EMAIL__PORT: ${SMTP_PORT:-587}
+      AUTHENTIK_EMAIL__USERNAME: ${SMTP_USERNAME:-}
+      AUTHENTIK_EMAIL__PASSWORD: ${SMTP_PASSWORD:-}
+      AUTHENTIK_EMAIL__USE_TLS: ${SMTP_USE_TLS:-true}
+      AUTHENTIK_EMAIL__FROM: ${ALERT_EMAIL_FROM:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+    shm_size: 512mb
+    volumes:
+      - authentik_data:/data
+
+  # Applies settings blueprints can't (the Privacy and Terms links under every sign-in page,
+  # from MAIN_SITE_URL) once per deploy, then just sleeps, so Coolify sees a running container
+  # instead of an exited one. It retries if authentik isn't ready yet.
+  authentik-settings:
+    build: ./authentik
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      [
+        'ak shell -c "exec(open(''/setup/settings.py'').read())" && exec sleep infinity',
+      ]
+    init: true
+    restart: on-failure
+    # The image's own healthcheck is for the server; this container has nothing to check.
+    healthcheck:
+      disable: true
+    depends_on:
+      authentik-server:
+        condition: service_healthy
+    environment:
+      AUTHENTIK_SECRET_KEY: ${SERVICE_PASSWORD_64_AUTHENTIKSECRET}
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${SERVICE_PASSWORD_64_AUTHENTIKDB}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      MAIN_SITE_URL: ${MAIN_SITE_URL:?set MAIN_SITE_URL}
+
+volumes:
+  authentik_db:
+  authentik_data:

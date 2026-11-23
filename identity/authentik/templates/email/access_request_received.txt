@@ -1,0 +1,7 @@
+Hi {{ name }},
+
+Thanks for asking for access to the {{ app_name }}. Your request is waiting for approval. You'll get another email as soon as it's approved, and you can then sign in with the username {{ username }} and the password you chose.
+
+If you didn't ask for this, you can ignore this email: the account stays switched off and is deleted if it isn't approved.
+
+{{ app_url }}

@@ -1,0 +1,40 @@
+# LOCAL ONLY: changes to ../monitoring/compose.yaml so it runs next to the local sites.
+# Pulled in by compose.yaml's `include`. Paths here resolve from ../monitoring, the first file
+# of the include, not from this folder.
+# Fixed container names for the local stack (see compose.yaml).
+services:
+  grafana:
+    container_name: grafana
+    environment:
+      # Plain HTTP on localhost. Email only once SMTP_* are set in .env (see .env.example).
+      GF_SECURITY_COOKIE_SECURE: "false"
+      GF_SMTP_ENABLED: ${SMTP_ENABLED:-false}
+      # Sign-in through the local authentik. The browser goes to id.localhost (AUTHENTIK_URL
+      # in monitoring.env), but inside Docker that name points at the Grafana container
+      # itself, so the server-to-server calls use authentik's service name instead.
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://authentik-server:9000/application/o/token/
+      GF_AUTH_GENERIC_OAUTH_API_URL: http://authentik-server:9000/application/o/userinfo/
+
+  blackbox-exporter:
+    container_name: blackbox-exporter
+    volumes:
+      # The local sites are plain HTTP, so use a config without the HTTPS requirement.
+      - ../local/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+
+  node-exporter:
+    container_name: node-exporter
+    volumes:
+      # Docker Desktop on Windows can't do the `rslave` mount.
+      - /:/host:ro
+
+  prometheus:
+    container_name: prometheus
+
+  loki:
+    container_name: loki
+
+  alloy:
+    container_name: alloy
+
+  cadvisor:
+    container_name: cadvisor

@@ -1,0 +1,9 @@
+apiVersion: 1
+providers:
+  - name: monitoring
+    folder: Monitoring
+    type: file
+    # Dashboards come from git; edit the JSON in the repo (or save a copy in the UI).
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards

@@ -1,0 +1,9 @@
+New access request
+
+{{ name }} ({{ email }}, username {{ username }}) asked for access to the {{ app_name }}.
+{% if reason %}
+Their reason: "{{ reason }}"
+{% endif %}
+To approve, open the user in authentik and click Activate. To refuse, delete the user.
+
+{{ users_url }}

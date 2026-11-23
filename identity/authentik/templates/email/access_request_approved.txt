@@ -1,0 +1,5 @@
+Hi {{ name }},
+
+Your access to the {{ app_name }} has been approved. Sign in with the username {{ username }} and the password you chose when you asked.
+
+{{ app_url }}

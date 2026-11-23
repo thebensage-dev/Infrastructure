@@ -1,0 +1,10 @@
+{% extends "email/site_base.html" %}
+{# Sent to someone who has just asked for access (blueprint policy platform-access-request-emails). #}
+{% block heading %}We've got your request{% endblock %}
+{% block heading_text %}We've got your request{% endblock %}
+{% block content %}
+<p style="margin: 0 0 14px 0;">Hi {{ name }},</p>
+<p style="margin: 0 0 14px 0;">Thanks for asking for access to the <strong style="color: [[light.foreground]];">{{ app_name }}</strong>. Your request is waiting for approval, and you'll get another email as soon as it's approved.</p>
+<p style="margin: 0 0 14px 0;">You'll then sign in with the username <strong style="color: [[light.foreground]];">{{ username }}</strong> and the password you chose.</p>
+<p style="margin: 0; font-size: 13px; color: [[light.foreground-muted]];">Didn't ask for this? You can ignore this email: the account stays switched off and is deleted if it isn't approved.</p>
+{% endblock %}

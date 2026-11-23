@@ -1,0 +1,9 @@
+# LOCAL ONLY: ../monitoring/blackbox/blackbox.yml without `fail_if_not_ssl`, because the local
+# sites are plain HTTP. Mounted by monitoring.override.yaml.
+modules:
+  http_site:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      follow_redirects: true

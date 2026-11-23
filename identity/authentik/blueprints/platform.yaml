@@ -1,0 +1,1542 @@
+# yaml-language-server: $schema=https://goauthentik.io/blueprints/schema.json
+# Everything authentik needs, in one blueprint (blueprints that depend on each other can hang
+# authentik's worker when applied together): groups, the Grafana, User Directory, API and
+# Portfolio sign-in apps, the sign-in pages, guest invitations and the shared "Request access"
+# (one account for every app, approved app by app).
+#
+# Single sign-on, and who may use what: anyone with an authentik account can sign in to the User
+# Directory, the API and Portfolio (no group rules on those apps), so the apps' silent sign-in
+# check (prompt=none) always comes straight back. Each app then decides what the person may do
+# from the `groups` claim in the token (profile scope): user-directory-editors, api-editors,
+# portfolio-members, and authentik Admins for everything. Only Grafana keeps group rules here,
+# because it is the owner's own tool.
+# Applied by the worker on start, when this file changes, and hourly. Change this file rather
+# than these objects in the UI: the next apply puts the values below back.
+version: 1
+metadata:
+  name: Platform - groups and applications
+  labels:
+    blueprints.goauthentik.io/description: Groups, OIDC apps, sign-in pages, guest invitations and approval-based sign-up.
+context:
+  # The sites' background (brand/ in the image). authentik's flow pages ignore the brand's default
+  # background, so every flow people see names it (`background: !Context background`).
+  background: /static/dist/assets/brand/background.svg
+entries:
+  # The default flows, scopes and signing key this file refers to must exist first.
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Provider authorization flow (implicit consent)
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Provider invalidation flow
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: System - OAuth2 Provider - Scopes
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Authentication flow
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Brand
+      required: true
+
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Events Transport & Rules
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Password change flow
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Invalidation flow
+      required: true
+
+  # The same background on authentik's own pages people see: consent, sign-out, password change.
+  - model: authentik_flows.flow
+    identifiers:
+      slug: default-provider-authorization-implicit-consent
+    attrs:
+      background: !Context background
+  - model: authentik_flows.flow
+    identifiers:
+      slug: default-provider-invalidation-flow
+    attrs:
+      background: !Context background
+  - model: authentik_flows.flow
+    identifiers:
+      slug: default-invalidation-flow
+    attrs:
+      background: !Context background
+  - model: authentik_flows.flow
+    identifiers:
+      slug: default-password-change
+    attrs:
+      background: !Context background
+  - model: authentik_flows.flow
+    identifiers:
+      slug: default-authentication-flow
+    attrs:
+      background: !Context background
+
+  # --- Groups ---------------------------------------------------------------------------------
+  # Members of "authentik Admins" (akadmin) get the same access as grafana-admins and can edit
+  # the User Directory, so nothing needs adding by hand after the first start.
+  - model: authentik_core.group
+    id: grafana-admins
+    identifiers:
+      name: grafana-admins
+    attrs:
+      is_superuser: false
+  - model: authentik_core.group
+    id: grafana-viewers
+    identifiers:
+      name: grafana-viewers
+    attrs:
+      is_superuser: false
+  - model: authentik_core.group
+    id: user-directory-editors
+    identifiers:
+      name: user-directory-editors
+    attrs:
+      is_superuser: false
+  # Portfolio's signed-in extras (the colour palette).
+  - model: authentik_core.group
+    id: portfolio-members
+    identifiers:
+      name: portfolio-members
+    attrs:
+      is_superuser: false
+
+  # --- Grafana --------------------------------------------------------------------------------
+  - model: authentik_providers_oauth2.oauth2provider
+    id: grafana-provider
+    identifiers:
+      name: Grafana
+    attrs:
+      authorization_flow:
+        !Find [
+          authentik_flows.flow,
+          [slug, default-provider-authorization-implicit-consent],
+        ]
+      invalidation_flow:
+        !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      client_type: confidential
+      # Blueprints start with no grant types, so name the one the apps use.
+      grant_types: [authorization_code, refresh_token]
+      client_id: grafana
+      client_secret: !Env GRAFANA_OIDC_CLIENT_SECRET
+      redirect_uris:
+        - matching_mode: strict
+          url: !Format ["%s/login/generic_oauth", !Env GRAFANA_URL]
+          redirect_uri_type: authorization
+      property_mappings:
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-openid],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-email],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-profile],
+          ]
+      signing_key:
+        !Find [
+          authentik_crypto.certificatekeypair,
+          [name, authentik Self-signed Certificate],
+        ]
+      include_claims_in_id_token: true
+  - model: authentik_core.application
+    id: grafana-app
+    identifiers:
+      slug: grafana
+    attrs:
+      name: Grafana
+      provider: !KeyOf grafana-provider
+      meta_launch_url: !Env GRAFANA_URL
+      meta_description: Dashboards, logs and alerts
+      # Any one matching group binding below lets the user in; everyone else is refused.
+      policy_engine_mode: any
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf grafana-app
+      group: !KeyOf grafana-admins
+    attrs:
+      order: 0
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf grafana-app
+      group: !KeyOf grafana-viewers
+    attrs:
+      order: 1
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf grafana-app
+      group: !Find [authentik_core.group, [name, authentik Admins]]
+    attrs:
+      order: 2
+
+  # --- User Directory -------------------------------------------------------------------------
+  - model: authentik_providers_oauth2.oauth2provider
+    id: user-directory-provider
+    identifiers:
+      name: User Directory
+    attrs:
+      authorization_flow:
+        !Find [
+          authentik_flows.flow,
+          [slug, default-provider-authorization-implicit-consent],
+        ]
+      invalidation_flow:
+        !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      client_type: confidential
+      # Blueprints start with no grant types, so name the one the apps use.
+      grant_types: [authorization_code, refresh_token]
+      client_id: user-directory
+      client_secret: !Env USER_DIRECTORY_OIDC_CLIENT_SECRET
+      redirect_uris:
+        - matching_mode: strict
+          url: !Format ["%s/auth/callback", !Env USER_DIRECTORY_URL]
+          redirect_uri_type: authorization
+      property_mappings:
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-openid],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-email],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-profile],
+          ]
+        # offline_access: a refresh token, so the app's writes to the API keep working after the
+        # 60-minute access token.
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-offline_access],
+          ]
+      signing_key:
+        !Find [
+          authentik_crypto.certificatekeypair,
+          [name, authentik Self-signed Certificate],
+        ]
+      include_claims_in_id_token: true
+  - model: authentik_core.application
+    id: user-directory-app
+    identifiers:
+      slug: user-directory
+    attrs:
+      name: User Directory
+      provider: !KeyOf user-directory-provider
+      meta_launch_url: !Env USER_DIRECTORY_URL
+      meta_description: Add, edit and delete people in the directory
+      policy_engine_mode: any
+  # Open to every account; the app lets user-directory-editors (and admins) edit. These group
+  # rules from before are removed.
+  - model: authentik_policies.policybinding
+    state: absent
+    identifiers:
+      target: !KeyOf user-directory-app
+      group: !KeyOf user-directory-editors
+  - model: authentik_policies.policybinding
+    state: absent
+    identifiers:
+      target: !KeyOf user-directory-app
+      group: !Find [authentik_core.group, [name, authentik Admins]]
+
+  # --- API ------------------------------------------------------------------------------------
+  # The general-use API at api.<domain>. Its docs page (Scalar) signs in here as a public client
+  # with PKCE, so there is no secret. The API also accepts the User Directory's tokens, which that
+  # app forwards on writes, so its editors don't need this app.
+  - model: authentik_core.group
+    id: api-editors
+    identifiers:
+      name: api-editors
+    attrs:
+      is_superuser: false
+  - model: authentik_providers_oauth2.oauth2provider
+    id: api-provider
+    identifiers:
+      name: API
+    attrs:
+      authorization_flow:
+        !Find [
+          authentik_flows.flow,
+          [slug, default-provider-authorization-implicit-consent],
+        ]
+      invalidation_flow:
+        !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      client_type: public
+      # Blueprints start with no grant types, so name the one the docs page uses.
+      grant_types: [authorization_code, refresh_token]
+      client_id: api
+      redirect_uris:
+        - matching_mode: strict
+          url: !Format ["%s/docs/", !Env API_URL]
+          redirect_uri_type: authorization
+      property_mappings:
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-openid],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-email],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-profile],
+          ]
+      signing_key:
+        !Find [
+          authentik_crypto.certificatekeypair,
+          [name, authentik Self-signed Certificate],
+        ]
+      include_claims_in_id_token: true
+  - model: authentik_core.application
+    id: api-app
+    identifiers:
+      slug: api
+    attrs:
+      name: API
+      provider: !KeyOf api-provider
+      meta_launch_url: !Format ["%s/docs/", !Env API_URL]
+      meta_description: Try the API's endpoints, signed in
+      policy_engine_mode: any
+  # Open to every account; the API only accepts writes from api-editors (and admins, and
+  # user-directory-editors through the User Directory). These group rules from before are removed.
+  - model: authentik_policies.policybinding
+    state: absent
+    identifiers:
+      target: !KeyOf api-app
+      group: !KeyOf api-editors
+  - model: authentik_policies.policybinding
+    state: absent
+    identifiers:
+      target: !KeyOf api-app
+      group: !Find [authentik_core.group, [name, authentik Admins]]
+
+  # --- Portfolio ------------------------------------------------------------------------------
+  # The main site. Signing in unlocks the colour palette for portfolio-members (checked by the
+  # site from the token's groups); anyone else signed in sees "request access".
+  - model: authentik_providers_oauth2.oauth2provider
+    id: portfolio-provider
+    identifiers:
+      name: Portfolio
+    attrs:
+      authorization_flow:
+        !Find [
+          authentik_flows.flow,
+          [slug, default-provider-authorization-implicit-consent],
+        ]
+      invalidation_flow:
+        !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      client_type: confidential
+      grant_types: [authorization_code, refresh_token]
+      client_id: portfolio
+      client_secret: !Env PORTFOLIO_OIDC_CLIENT_SECRET
+      redirect_uris:
+        - matching_mode: strict
+          url: !Format ["%s/auth/callback", !Env MAIN_SITE_URL]
+          redirect_uri_type: authorization
+      property_mappings:
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-openid],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-email],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-profile],
+          ]
+      signing_key:
+        !Find [
+          authentik_crypto.certificatekeypair,
+          [name, authentik Self-signed Certificate],
+        ]
+      include_claims_in_id_token: true
+  - model: authentik_core.application
+    id: portfolio-app
+    identifiers:
+      slug: portfolio
+    attrs:
+      name: Portfolio
+      provider: !KeyOf portfolio-provider
+      meta_launch_url: !Env MAIN_SITE_URL
+      meta_description: The main site, with its colour palette for members
+
+  # --- Login page -----------------------------------------------------------------------------
+  # Username or email and password on one screen, and passkeys offered straight away by the
+  # browser (autofill) for anyone who has added one. Two-factor stays optional per user.
+  - model: authentik_stages_identification.identificationstage
+    identifiers:
+      name: default-authentication-identification
+    attrs:
+      user_fields: [email, username]
+      password_stage:
+        !Find [
+          authentik_stages_password.passwordstage,
+          [name, default-authentication-password],
+        ]
+      webauthn_stage:
+        !Find [
+          authentik_stages_authenticator_validate.authenticatorvalidatestage,
+          [name, default-authentication-mfa-validation],
+        ]
+  # Our own sign-in flow, reusing the default stages, so the page says "Sign in" rather than
+  # "Welcome to authentik!" (the default flow belongs to authentik's own blueprint).
+  - model: authentik_flows.flow
+    id: sign-in-flow
+    identifiers:
+      slug: sign-in
+    attrs:
+      # Used for Grafana and authentik itself; the User Directory has its own page below.
+      name: Sign in (Grafana and authentik)
+      title: !Format ["Sign in to %s", !Env [AUTHENTIK_BRAND_TITLE, TheBensage]]
+      designation: authentication
+      authentication: none
+      background: !Context background
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf sign-in-flow
+      order: 10
+    attrs:
+      stage:
+        !Find [
+          authentik_stages_identification.identificationstage,
+          [name, default-authentication-identification],
+        ]
+  - model: authentik_flows.flowstagebinding
+    id: sign-in-password-binding
+    identifiers:
+      target: !KeyOf sign-in-flow
+      order: 20
+    attrs:
+      stage:
+        !Find [
+          authentik_stages_password.passwordstage,
+          [name, default-authentication-password],
+        ]
+      re_evaluate_policies: true
+  - model: authentik_flows.flowstagebinding
+    id: sign-in-mfa-binding
+    identifiers:
+      target: !KeyOf sign-in-flow
+      order: 30
+    attrs:
+      stage:
+        !Find [
+          authentik_stages_authenticator_validate.authenticatorvalidatestage,
+          [name, default-authentication-mfa-validation],
+        ]
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf sign-in-flow
+      order: 100
+    attrs:
+      stage:
+        !Find [
+          authentik_stages_user_login.userloginstage,
+          [name, default-authentication-login],
+        ]
+  # Skip the password step when the first screen already checked it, and skip two-factor
+  # after a passkey sign-in (same policies as the default flow).
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf sign-in-password-binding
+      order: 10
+    attrs:
+      policy:
+        !Find [
+          authentik_policies_expression.expressionpolicy,
+          [name, default-authentication-flow-password-stage],
+        ]
+      failure_result: true
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf sign-in-mfa-binding
+      order: 10
+    attrs:
+      policy:
+        !Find [
+          authentik_policies_expression.expressionpolicy,
+          [name, default-authentication-flow-authenticator-validate-stage],
+        ]
+      failure_result: true
+  - model: authentik_brands.brand
+    identifiers:
+      domain: authentik-default
+    attrs:
+      branding_title: !Env [AUTHENTIK_BRAND_TITLE, TheBensage]
+      # People who sign up or are invited are "external" users (below): opening id.<domain> takes
+      # them straight to the User Directory instead of authentik's own account pages.
+      default_application: !KeyOf user-directory-app
+      flow_authentication: !KeyOf sign-in-flow
+      # The sites' look (identity/authentik/brand.css and brand/, baked into the image).
+      branding_logo: /static/dist/assets/brand/logo.svg
+      branding_favicon: /static/dist/assets/brand/logo.svg
+      branding_default_flow_background: /static/dist/assets/brand/background.svg
+      branding_custom_css: !File [/setup/brand.css, ""]
+      # brand.css is dark only, like the sites' default look.
+      attributes:
+        settings:
+          theme:
+            base: dark
+
+  # ============================================================================================
+  # Guest invitations
+  # Invite links for temporary guests. In authentik: Directory > Invitations > Create, flow
+  # "guest-invite", tick "Single use", set an expiry, then send the link. The guest picks a
+  # username and password (they can add a passkey or two-factor later under their settings) and
+  # lands in user-directory-editors, so they can edit the User Directory but not open Grafana.
+  # Revoke access by deactivating the user (Directory > Users).
+  - model: authentik_flows.flow
+    id: flow
+    identifiers:
+      slug: guest-invite
+    attrs:
+      name: Guest invitation
+      title: Create your account
+      designation: enrollment
+      authentication: require_unauthenticated
+      background: !Context background
+
+  # Without a valid invitation link the flow stops here.
+  - model: authentik_stages_invitation.invitationstage
+    id: invitation
+    identifiers:
+      name: guest-invite-invitation
+    attrs:
+      continue_flow_without_invitation: false
+
+  - model: authentik_stages_prompt.prompt
+    id: field-name
+    identifiers:
+      name: guest-invite-field-name
+    attrs:
+      field_key: name
+      label: Your name
+      type: text
+      required: true
+      placeholder: Your name
+      order: 0
+  - model: authentik_stages_prompt.prompt
+    id: field-email
+    identifiers:
+      name: guest-invite-field-email
+    attrs:
+      field_key: email
+      label: Email
+      type: email
+      required: true
+      placeholder: Email
+      order: 1
+  - model: authentik_stages_prompt.prompt
+    id: field-username
+    identifiers:
+      name: guest-invite-field-username
+    attrs:
+      field_key: username
+      label: Username
+      type: username
+      required: true
+      placeholder: Username
+      order: 2
+  - model: authentik_stages_prompt.prompt
+    id: field-password
+    identifiers:
+      name: guest-invite-field-password
+    attrs:
+      field_key: password
+      label: Password
+      type: password
+      required: true
+      placeholder: Password
+      order: 3
+  - model: authentik_stages_prompt.prompt
+    id: field-password-repeat
+    identifiers:
+      name: guest-invite-field-password-repeat
+    attrs:
+      field_key: password_repeat
+      label: Password (again)
+      type: password
+      required: true
+      placeholder: Password (again)
+      order: 4
+  - model: authentik_stages_prompt.prompt
+    id: field-notice
+    identifiers:
+      name: guest-invite-field-notice
+    attrs:
+      field_key: notice
+      label: Notice
+      type: static
+      required: false
+      initial_value: !Format
+        - >-
+          <p>Your name, email and username are stored only to let you sign in, and deleted
+          when your access ends. See the <a href="%s/privacy" target="_blank" rel="noopener">privacy
+          notice</a> and <a href="%s/terms" target="_blank" rel="noopener">terms</a>.</p>
+        - !Env MAIN_SITE_URL
+        - !Env MAIN_SITE_URL
+      order: 5
+
+  - model: authentik_stages_prompt.promptstage
+    id: prompt
+    identifiers:
+      name: guest-invite-prompt
+    attrs:
+      fields:
+        - !KeyOf field-name
+        - !KeyOf field-email
+        - !KeyOf field-username
+        - !KeyOf field-password
+        - !KeyOf field-password-repeat
+        - !KeyOf field-notice
+      # At least 8 characters, the same rule as authentik's password change form.
+      validation_policies:
+        - !Find [
+            authentik_policies_password.passwordpolicy,
+            [name, default-password-change-password-policy],
+          ]
+
+  - model: authentik_stages_user_write.userwritestage
+    id: write
+    identifiers:
+      name: guest-invite-write
+    attrs:
+      user_creation_mode: always_create
+      # External: they can use the apps they are allowed into, but not authentik's own pages.
+      user_type: external
+      user_path_template: users/guests
+      create_users_group:
+        !KeyOf user-directory-editors
+
+  - model: authentik_stages_user_login.userloginstage
+    id: login
+    identifiers:
+      name: guest-invite-login
+
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf flow
+      order: 0
+    attrs:
+      stage: !KeyOf invitation
+      evaluate_on_plan: true
+      re_evaluate_policies: true
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf flow
+      order: 10
+    attrs:
+      stage: !KeyOf prompt
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf flow
+      order: 20
+    attrs:
+      stage: !KeyOf write
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf flow
+      order: 100
+    attrs:
+      stage: !KeyOf login
+
+  # ============================================================================================
+  # "Request access": one page for every app, approved app by app
+  #
+  # /if/flow/request-access/?app=<slug> (the apps link here with their own slug, which ticks that
+  # app's box). Someone new creates their account first (name, email, username, password); the
+  # account works straight away, so they come back to the app signed in, but they can't do
+  # anything yet. Everyone, new or already signed in, then ticks the apps they'd like:
+  #   portfolio      -> portfolio-members       (the colour palette)
+  #   user-directory -> user-directory-editors  (add, edit and delete people)
+  #   api            -> api-editors             (send real requests from the API docs)
+  # The picks are kept on the user (attribute `requested_apps`), the person gets a "we've got your
+  # request" email and the admins a request email (plus the notification bell for new accounts).
+  #
+  # Approve an app: add the person to that app's group (Directory > Groups > the group > Users >
+  # Add existing user, or the user's Groups tab). They get a "you're in" email for that app.
+  # Refuse: leave it (or clear `requested_apps`); delete the user to remove the account.
+  # Grafana isn't requestable: add people to grafana-viewers or grafana-admins yourself.
+  # Another app: add it to the APPS lists in the three expressions below and give it a checkbox.
+  - model: authentik_flows.flow
+    id: request-access-flow
+    identifiers:
+      slug: request-access
+    attrs:
+      name: Request access
+      title: Request access
+      designation: enrollment
+      # Works signed in (pick more apps) and signed out (create the account first).
+      authentication: none
+      background: !Context background
+
+  # --- Step 1, signed out only: the account -------------------------------------------------
+  - model: authentik_stages_prompt.prompt
+    id: request-access-field-notice
+    identifiers:
+      name: request-access-field-notice
+    attrs:
+      field_key: account_notice
+      label: Your account
+      type: static
+      required: false
+      initial_value: !Format
+        - >-
+          <p>One account for every app on this site. Next you'll pick the apps you'd like; the
+          site owner approves each one. Your name, email and username are stored only for this and
+          deleted when your access ends. See the <a href="%s/privacy" target="_blank"
+          rel="noopener">privacy notice</a> and <a href="%s/terms" target="_blank"
+          rel="noopener">terms</a>.</p>
+        - !Env MAIN_SITE_URL
+        - !Env MAIN_SITE_URL
+      order: 6
+
+  # One account per email address and username: a second try is refused on the form.
+  - model: authentik_policies_expression.expressionpolicy
+    id: request-access-unique
+    identifiers:
+      name: platform-access-request-unique
+    attrs:
+      expression: |
+        from authentik.core.models import User
+        data = request.context.get("prompt_data", {})
+        email = (data.get("email") or "").strip()
+        username = (data.get("username") or "").strip()
+        if email and User.objects.filter(email__iexact=email).exists():
+            ak_message("This email address already has an account. Sign in, then request the apps you'd like.")
+            return False
+        if username and User.objects.filter(username__iexact=username).exists():
+            ak_message("That username is taken. Please choose another.")
+            return False
+        return True
+
+  - model: authentik_stages_prompt.promptstage
+    id: request-access-account-prompt
+    identifiers:
+      name: request-access-account-prompt
+    attrs:
+      fields:
+        - !Find [authentik_stages_prompt.prompt, [name, guest-invite-field-name]]
+        - !Find [authentik_stages_prompt.prompt, [name, guest-invite-field-email]]
+        - !Find [authentik_stages_prompt.prompt, [name, guest-invite-field-username]]
+        - !Find [authentik_stages_prompt.prompt, [name, guest-invite-field-password]]
+        - !Find [authentik_stages_prompt.prompt, [name, guest-invite-field-password-repeat]]
+        - !KeyOf request-access-field-notice
+      validation_policies:
+        - !Find [authentik_policies_password.passwordpolicy, [name, default-password-change-password-policy]]
+        - !KeyOf request-access-unique
+
+  - model: authentik_stages_user_write.userwritestage
+    id: request-access-write
+    identifiers:
+      name: request-access-write
+    attrs:
+      user_creation_mode: always_create
+      # External: they can use the apps, but not authentik's own pages. No groups yet: each app's
+      # group is the approval.
+      user_type: external
+      user_path_template: users/members
+
+  - model: authentik_stages_user_login.userloginstage
+    id: request-access-login
+    identifiers:
+      name: request-access-login
+
+  # --- Step 2, everyone: which apps ---------------------------------------------------------
+  - model: authentik_stages_prompt.prompt
+    id: request-access-app-portfolio
+    identifiers:
+      name: request-access-app-portfolio
+    attrs:
+      field_key: app_portfolio
+      label: "Portfolio: the colour palette"
+      type: checkbox
+      # Ticked when it says anything ("on"); empty = not ticked (authentik's checkbox rule).
+      required: false
+      initial_value: return "on" if (http_request.session.get("authentik/flows/get") or {}).get("app") == "portfolio" else ""
+      initial_value_expression: true
+      order: 0
+  - model: authentik_stages_prompt.prompt
+    id: request-access-app-user-directory
+    identifiers:
+      name: request-access-app-user-directory
+    attrs:
+      field_key: app_user_directory
+      label: "User Directory: add, edit and delete people"
+      type: checkbox
+      # Ticked when it says anything ("on"); empty = not ticked (authentik's checkbox rule).
+      required: false
+      initial_value: return "on" if (http_request.session.get("authentik/flows/get") or {}).get("app") == "user-directory" else ""
+      initial_value_expression: true
+      order: 1
+  - model: authentik_stages_prompt.prompt
+    id: request-access-app-api
+    identifiers:
+      name: request-access-app-api
+    attrs:
+      field_key: app_api
+      label: "API: send real requests from its docs"
+      type: checkbox
+      # Ticked when it says anything ("on"); empty = not ticked (authentik's checkbox rule).
+      required: false
+      initial_value: return "on" if (http_request.session.get("authentik/flows/get") or {}).get("app") == "api" else ""
+      initial_value_expression: true
+      order: 2
+  - model: authentik_stages_prompt.prompt
+    id: request-access-field-reason
+    identifiers:
+      name: request-access-field-reason
+    attrs:
+      field_key: access_reason
+      label: Why would you like access? (optional)
+      type: text_area
+      required: false
+      placeholder: A sentence is plenty, e.g. "Recruiter at …, trying out your demo"
+      order: 3
+
+  # At least one box ticked.
+  - model: authentik_policies_expression.expressionpolicy
+    id: request-access-picked
+    identifiers:
+      name: platform-access-request-picked
+    attrs:
+      expression: |
+        data = request.context.get("prompt_data", {})
+        if not any(data.get(key) for key in ("app_portfolio", "app_user_directory", "app_api")):
+            ak_message("Tick at least one app.")
+            return False
+        return True
+
+  - model: authentik_stages_prompt.promptstage
+    id: request-access-apps-prompt
+    identifiers:
+      name: request-access-apps-prompt
+    attrs:
+      fields:
+        - !KeyOf request-access-app-portfolio
+        - !KeyOf request-access-app-user-directory
+        - !KeyOf request-access-app-api
+        - !KeyOf request-access-field-reason
+      validation_policies:
+        - !KeyOf request-access-picked
+
+  # Records the request on the user, sends the emails (only when authentik has an SMTP server,
+  # AUTHENTIK_EMAIL__HOST) and sends the person back to the app they came from.
+  - model: authentik_policies_expression.expressionpolicy
+    id: request-access-record
+    identifiers:
+      name: platform-access-request-emails
+    attrs:
+      expression: !Format
+        - |
+          APPS = {
+              # The way back signs them in to the app (instant: they're signed in to authentik now).
+              "portfolio": ("Portfolio", "%s", "portfolio-members", "%s/auth/login?returnTo=%%2F%%3Faccess%%3Drequested"),
+              "user-directory": ("User Directory", "%s", "user-directory-editors", "%s/auth/login?returnTo=%%2Fusers%%3Faccess%%3Drequested"),
+              "api": ("API", "%s/docs/", "api-editors", "%s/docs/"),
+          }
+          plan = request.context.get("flow_plan")
+          data = request.context.get("prompt_data", {})
+          user = (plan.context.get("pending_user") if plan else None) or request.user
+          if not user or not user.pk:
+              return True
+          held = set(user.groups.values_list("name", flat=True))
+          picked = [slug for slug in APPS if data.get("app_" + slug.replace("-", "_")) and APPS[slug][2] not in held]
+          wanted = sorted(set(user.attributes.get("requested_apps", [])) | set(picked))
+          user.attributes["requested_apps"] = wanted
+          if data.get("access_reason"):
+              user.attributes["access_reason"] = data.get("access_reason")
+          user.save()
+
+          came_from = (request.http_request.session.get("authentik/flows/get") or {}).get("app") if request.http_request else None
+          back = came_from if came_from in APPS else (picked[0] if picked else "portfolio")
+          if plan:
+              plan.context["redirect_stage_target"] = APPS[back][3]
+
+          from authentik.lib.config import CONFIG
+          if not picked or CONFIG.get("email.host") in ("", "localhost"):
+              return True
+          names = [APPS[slug][0] for slug in picked]
+          app_names = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+          ctx = {
+              "name": user.name or user.username,
+              "username": user.username,
+              "email": user.email,
+              "reason": data.get("access_reason") or "",
+              "app_name": app_names,
+              "app_url": APPS[back][1],
+              "site_name": "%s",
+              "main_site_url": "%s",
+          }
+          users_url = request.http_request.build_absolute_uri("/if/admin/#/identity/users") if request.http_request else ""
+          if user.email:
+              ak_send_email(user.email, "We've got your request for " + app_names, template="email/access_request_received.html", context=dict(ctx, button_url=APPS[back][1], button_label="Back to the " + APPS[back][0]))
+          admins = [a.strip() for a in "%s".replace(";", ",").split(",") if a.strip()]
+          if admins:
+              ak_send_email(admins, "New access request: " + ctx["name"] + " (" + app_names + ")", template="email/access_request_admin.html", context=dict(ctx, button_url=users_url, button_label="Review in authentik"))
+          return True
+        - !Env MAIN_SITE_URL
+        - !Env MAIN_SITE_URL
+        - !Env USER_DIRECTORY_URL
+        - !Env USER_DIRECTORY_URL
+        - !Env API_URL
+        - !Env API_URL
+        - !Env [AUTHENTIK_BRAND_TITLE, TheBensage]
+        - !Env MAIN_SITE_URL
+        - !Env [ALERT_EMAIL_TO, ""]
+
+  # Back to the app (the target comes from the policy above; this is the fallback).
+  - model: authentik_stages_redirect.redirectstage
+    id: request-access-done
+    identifiers:
+      name: request-access-done
+    attrs:
+      mode: static
+      target_static: !Format ["%s/?access=requested", !Env MAIN_SITE_URL]
+      keep_context: false
+
+  # Signed in already: skip step 1.
+  - model: authentik_policies_expression.expressionpolicy
+    id: request-access-signed-out
+    identifiers:
+      name: platform-access-request-signed-out
+    attrs:
+      # The browser's own sign-in, not request.user: once step 1 has created the account, request.user
+      # is that new (pending) user, and the sign-in step must still run.
+      expression: return not (request.http_request and request.http_request.user.is_authenticated)
+
+  - model: authentik_flows.flowstagebinding
+    id: request-access-account-binding
+    identifiers:
+      target: !KeyOf request-access-flow
+      order: 10
+    attrs:
+      stage: !KeyOf request-access-account-prompt
+  - model: authentik_flows.flowstagebinding
+    id: request-access-write-binding
+    identifiers:
+      target: !KeyOf request-access-flow
+      order: 20
+    attrs:
+      stage: !KeyOf request-access-write
+  - model: authentik_flows.flowstagebinding
+    id: request-access-login-binding
+    identifiers:
+      target: !KeyOf request-access-flow
+      order: 30
+    attrs:
+      stage: !KeyOf request-access-login
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf request-access-account-binding
+      order: 0
+    attrs:
+      policy: !KeyOf request-access-signed-out
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf request-access-write-binding
+      order: 0
+    attrs:
+      policy: !KeyOf request-access-signed-out
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf request-access-login-binding
+      order: 0
+    attrs:
+      policy: !KeyOf request-access-signed-out
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf request-access-flow
+      order: 40
+    attrs:
+      stage: !KeyOf request-access-apps-prompt
+  - model: authentik_flows.flowstagebinding
+    id: request-access-done-binding
+    identifiers:
+      target: !KeyOf request-access-flow
+      order: 50
+    attrs:
+      stage: !KeyOf request-access-done
+      # The policy runs when this step is reached, after the account exists and the boxes are in.
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf request-access-done-binding
+      order: 0
+    attrs:
+      policy: !KeyOf request-access-record
+
+  # "Need an account? Request access" under every sign-in form. (The same stage as under "Login
+  # page" above, which comes before this flow exists, so the settings are repeated here.)
+  - model: authentik_stages_identification.identificationstage
+    identifiers:
+      name: default-authentication-identification
+    attrs:
+      user_fields: [email, username]
+      password_stage:
+        !Find [
+          authentik_stages_password.passwordstage,
+          [name, default-authentication-password],
+        ]
+      webauthn_stage:
+        !Find [
+          authentik_stages_authenticator_validate.authenticatorvalidatestage,
+          [name, default-authentication-mfa-validation],
+        ]
+      enrollment_flow: !KeyOf request-access-flow
+
+  # The User Directory's own request flow from before, replaced by the one above.
+  - model: authentik_flows.flow
+    state: absent
+    identifiers:
+      slug: user-directory-sign-up
+  - model: authentik_stages_prompt.promptstage
+    state: absent
+    identifiers:
+      name: user-directory-sign-up-prompt
+  - model: authentik_stages_prompt.prompt
+    state: absent
+    identifiers:
+      name: user-directory-sign-up-field-reason
+  - model: authentik_stages_prompt.prompt
+    state: absent
+    identifiers:
+      name: user-directory-sign-up-field-notice
+  - model: authentik_stages_user_write.userwritestage
+    state: absent
+    identifiers:
+      name: user-directory-sign-up-write
+  - model: authentik_stages_redirect.redirectstage
+    state: absent
+    identifiers:
+      name: user-directory-sign-up-done
+
+  # ============================================================================================
+  # User Directory: its own sign-in page
+  # --- Sign-in for this app --------------------------------------------------------------------
+  - model: authentik_stages_identification.identificationstage
+    id: ud-identification
+    identifiers:
+      name: user-directory-identification
+    attrs:
+      user_fields: [email, username]
+      password_stage: !Find [authentik_stages_password.passwordstage, [name, default-authentication-password]]
+      # The "Need an account?" link under the form.
+      enrollment_flow: !KeyOf request-access-flow
+  - model: authentik_flows.flow
+    id: ud-sign-in-flow
+    identifiers:
+      slug: user-directory-sign-in
+    attrs:
+      name: User Directory - sign in
+      title: Sign in to the User Directory
+      designation: authentication
+      authentication: none
+      background: !Context background
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf ud-sign-in-flow
+      order: 10
+    attrs:
+      stage: !KeyOf ud-identification
+  - model: authentik_flows.flowstagebinding
+    id: ud-sign-in-password-binding
+    identifiers:
+      target: !KeyOf ud-sign-in-flow
+      order: 20
+    attrs:
+      stage: !Find [authentik_stages_password.passwordstage, [name, default-authentication-password]]
+      re_evaluate_policies: true
+  - model: authentik_flows.flowstagebinding
+    id: ud-sign-in-mfa-binding
+    identifiers:
+      target: !KeyOf ud-sign-in-flow
+      order: 30
+    attrs:
+      stage: !Find [authentik_stages_authenticator_validate.authenticatorvalidatestage, [name, default-authentication-mfa-validation]]
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf ud-sign-in-flow
+      order: 100
+    attrs:
+      stage: !Find [authentik_stages_user_login.userloginstage, [name, default-authentication-login]]
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf ud-sign-in-password-binding
+      order: 10
+    attrs:
+      policy: !Find [authentik_policies_expression.expressionpolicy, [name, default-authentication-flow-password-stage]]
+      failure_result: true
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf ud-sign-in-mfa-binding
+      order: 10
+    attrs:
+      policy: !Find [authentik_policies_expression.expressionpolicy, [name, default-authentication-flow-authenticator-validate-stage]]
+      failure_result: true
+
+  # The User Directory's provider uses this sign-in page.
+  - model: authentik_providers_oauth2.oauth2provider
+    identifiers:
+      name: User Directory
+    attrs:
+      authentication_flow: !KeyOf ud-sign-in-flow
+
+  # ============================================================================================
+  # "Your account": change name and email (flow `account`) or password (flow `account-password`).
+  # These are plain flow pages, so they work for external users too (who can't open authentik's
+  # own account area). Portfolio and the User Directory link to `account?app=<slug>` from the
+  # signed-in name in their header. Afterwards people go back to that app through a fresh sign-in
+  # (instant, authentik is already signed in), so it shows the new name straight away.
+  - model: authentik_flows.flow
+    id: account-flow
+    identifiers:
+      slug: account
+    attrs:
+      name: Your account - name and email
+      title: Your account
+      designation: stage_configuration
+      authentication: require_authenticated
+      background: !Context background
+  - model: authentik_flows.flow
+    id: account-password-flow
+    identifiers:
+      slug: account-password
+    attrs:
+      name: Your account - password
+      title: Change your password
+      designation: stage_configuration
+      authentication: require_authenticated
+      background: !Context background
+
+  - model: authentik_stages_prompt.prompt
+    id: account-field-name
+    identifiers:
+      name: account-field-name
+    attrs:
+      field_key: name
+      label: Your name
+      type: text
+      required: true
+      placeholder: Your name
+      initial_value: return user.name
+      initial_value_expression: true
+      order: 0
+  - model: authentik_stages_prompt.prompt
+    id: account-field-email
+    identifiers:
+      name: account-field-email
+    attrs:
+      field_key: email
+      label: Email
+      type: email
+      required: true
+      placeholder: Email
+      initial_value: return user.email
+      initial_value_expression: true
+      order: 1
+  - model: authentik_stages_prompt.prompt
+    id: account-field-links
+    identifiers:
+      name: account-field-links
+    attrs:
+      field_key: account_links
+      label: More
+      type: static
+      required: false
+      # Links back to the app the person came from (?app=), the User Directory if none.
+      initial_value: !Format
+        - |
+          APPS = {"portfolio": ("Portfolio", "%s/"), "user-directory": ("the User Directory", "%s/users")}
+          app = (http_request.session.get("authentik/flows/get") or {}).get("app") if http_request else None
+          app = app if app in APPS else "user-directory"
+          name, url = APPS[app]
+          return ('<p>Your username stays the same. <a href="/if/flow/account-password/?app=' + app
+                  + '">Change your password</a> · <a href="' + url + '">Back to ' + name + '</a></p>')
+        - !Env MAIN_SITE_URL
+        - !Env USER_DIRECTORY_URL
+      initial_value_expression: true
+      order: 2
+  - model: authentik_stages_prompt.prompt
+    id: account-field-current-password
+    identifiers:
+      name: account-field-current-password
+    attrs:
+      # Not a user field, so the user write stage ignores it; only checked by the policy below.
+      field_key: current_password
+      label: Current password
+      type: password
+      required: true
+      placeholder: Current password
+      order: 0
+
+  - model: authentik_stages_prompt.prompt
+    id: account-field-new-password
+    identifiers:
+      name: account-field-new-password
+    attrs:
+      field_key: password
+      label: New password
+      type: password
+      required: true
+      placeholder: New password (at least 8 characters)
+      order: 1
+  - model: authentik_stages_prompt.prompt
+    id: account-field-new-password-repeat
+    identifiers:
+      name: account-field-new-password-repeat
+    attrs:
+      field_key: password_repeat
+      label: New password (again)
+      type: password
+      required: true
+      placeholder: New password (again)
+      order: 2
+
+  # A new email must not belong to anyone else.
+  - model: authentik_policies_expression.expressionpolicy
+    id: account-email-unique
+    identifiers:
+      name: platform-account-email-unique
+    attrs:
+      expression: |
+        from authentik.core.models import User
+        email = (request.context.get("prompt_data", {}).get("email") or "").strip()
+        if email and User.objects.filter(email__iexact=email).exclude(pk=request.user.pk).exists():
+            ak_message("That email address is already used by another account.")
+            return False
+        return True
+  - model: authentik_policies_expression.expressionpolicy
+    id: account-current-password
+    identifiers:
+      name: platform-account-current-password
+    attrs:
+      expression: |
+        current = request.context.get("prompt_data", {}).get("current_password") or ""
+        if not request.user.check_password(current):
+            ak_message("Your current password isn't right.")
+            return False
+        return True
+
+  - model: authentik_stages_prompt.promptstage
+    id: account-prompt
+    identifiers:
+      name: account-prompt
+    attrs:
+      fields:
+        - !KeyOf account-field-name
+        - !KeyOf account-field-email
+        - !KeyOf account-field-links
+      validation_policies:
+        - !KeyOf account-email-unique
+  - model: authentik_stages_prompt.promptstage
+    id: account-password-prompt
+    identifiers:
+      name: account-password-prompt
+    attrs:
+      fields:
+        - !KeyOf account-field-current-password
+        - !KeyOf account-field-new-password
+        - !KeyOf account-field-new-password-repeat
+      validation_policies:
+        - !KeyOf account-current-password
+        - !Find [authentik_policies_password.passwordpolicy, [name, default-password-change-password-policy]]
+  - model: authentik_stages_user_write.userwritestage
+    id: account-write
+    identifiers:
+      name: account-write
+    attrs:
+      # Only ever updates the signed-in user.
+      user_creation_mode: never_create
+  - model: authentik_stages_redirect.redirectstage
+    id: account-done
+    identifiers:
+      name: account-done
+    attrs:
+      mode: static
+      # A fresh sign-in (instant, authentik is already signed in) so the app shows the new name.
+      # This is the fallback; platform-account-return below picks the app from ?app=.
+      # %%2F is an escaped "/".
+      target_static: !Format ["%s/auth/login?returnTo=%%2Fusers", !Env USER_DIRECTORY_URL]
+      keep_context: false
+  - model: authentik_policies_expression.expressionpolicy
+    id: account-return
+    identifiers:
+      name: platform-account-return
+    attrs:
+      expression: !Format
+        - |
+          APPS = {
+              "portfolio": "%s/auth/login?returnTo=%%2F",
+              "user-directory": "%s/auth/login?returnTo=%%2Fusers",
+          }
+          app = (request.http_request.session.get("authentik/flows/get") or {}).get("app") if request.http_request else None
+          plan = request.context.get("flow_plan")
+          if plan and app in APPS:
+              plan.context["redirect_stage_target"] = APPS[app]
+          return True
+        - !Env MAIN_SITE_URL
+        - !Env USER_DIRECTORY_URL
+
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf account-flow
+      order: 10
+    attrs:
+      stage: !KeyOf account-prompt
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf account-flow
+      order: 20
+    attrs:
+      stage: !KeyOf account-write
+  - model: authentik_flows.flowstagebinding
+    id: account-done-binding
+    identifiers:
+      target: !KeyOf account-flow
+      order: 30
+    attrs:
+      stage: !KeyOf account-done
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf account-done-binding
+      order: 0
+    attrs:
+      policy: !KeyOf account-return
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf account-password-flow
+      order: 10
+    attrs:
+      stage: !KeyOf account-password-prompt
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf account-password-flow
+      order: 20
+    attrs:
+      stage: !KeyOf account-write
+  - model: authentik_flows.flowstagebinding
+    id: account-password-done-binding
+    identifiers:
+      target: !KeyOf account-password-flow
+      order: 30
+    attrs:
+      stage: !KeyOf account-done
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf account-password-done-binding
+      order: 0
+    attrs:
+      policy: !KeyOf account-return
+
+  # ============================================================================================
+  # "Sign out": one sign-out for every app (single logout)
+  #
+  # The apps' Sign out buttons come here (/if/flow/sign-out/?app=<slug>), and so does Grafana's
+  # (through the OIDC end-session endpoint: this is every provider's invalidation flow). It ends
+  # the authentik session; authentik then loads each app's front-channel logout page
+  # (<app>/auth/frontchannel-logout, the providers' logout_uri below) in hidden frames, so
+  # Portfolio and the User Directory drop their own sessions too, and sends the person back to the
+  # app. Grafana has no front-channel logout, so a Grafana session ends only when you sign out of
+  # Grafana itself (or it expires).
+  - model: authentik_flows.flow
+    id: sign-out-flow
+    identifiers:
+      slug: sign-out
+    attrs:
+      name: Sign out (every app)
+      title: Signing out
+      designation: invalidation
+      authentication: none
+      background: !Context background
+  - model: authentik_stages_user_logout.userlogoutstage
+    id: sign-out-logout
+    identifiers:
+      name: sign-out-logout
+  - model: authentik_stages_redirect.redirectstage
+    id: sign-out-done
+    identifiers:
+      name: sign-out-done
+    attrs:
+      mode: static
+      # The fallback; platform-sign-out-return below picks the app.
+      target_static: !Format ["%s/", !Env MAIN_SITE_URL]
+      keep_context: false
+  - model: authentik_policies_expression.expressionpolicy
+    id: sign-out-return
+    identifiers:
+      name: platform-sign-out-return
+    attrs:
+      expression: !Format
+        - |
+          APPS = {
+              "portfolio": "%s/",
+              "user-directory": "%s/users",
+              "grafana": "%s/",
+          }
+          plan = request.context.get("flow_plan")
+          app = (request.http_request.session.get("authentik/flows/get") or {}).get("app") if request.http_request else None
+          if app not in APPS and plan and plan.context.get("application"):
+              # Through an app's end-session URL (Grafana's sign-out): back to that app.
+              app = plan.context["application"].slug
+          if plan and app in APPS:
+              plan.context["redirect_stage_target"] = APPS[app]
+          return True
+        - !Env MAIN_SITE_URL
+        - !Env USER_DIRECTORY_URL
+        - !Env GRAFANA_URL
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf sign-out-flow
+      order: 0
+    attrs:
+      stage: !KeyOf sign-out-logout
+  - model: authentik_flows.flowstagebinding
+    id: sign-out-done-binding
+    identifiers:
+      target: !KeyOf sign-out-flow
+      order: 10
+    attrs:
+      stage: !KeyOf sign-out-done
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf sign-out-done-binding
+      order: 0
+    attrs:
+      policy: !KeyOf sign-out-return
+
+  # Every provider signs out through it; the two Next.js apps also take the front-channel logout.
+  - model: authentik_providers_oauth2.oauth2provider
+    identifiers:
+      name: Grafana
+    attrs:
+      invalidation_flow: !KeyOf sign-out-flow
+  - model: authentik_providers_oauth2.oauth2provider
+    identifiers:
+      name: API
+    attrs:
+      invalidation_flow: !KeyOf sign-out-flow
+  - model: authentik_providers_oauth2.oauth2provider
+    identifiers:
+      name: User Directory
+    attrs:
+      invalidation_flow: !KeyOf sign-out-flow
+      logout_method: frontchannel
+      logout_uri: !Format ["%s/auth/frontchannel-logout", !Env USER_DIRECTORY_URL]
+  - model: authentik_providers_oauth2.oauth2provider
+    identifiers:
+      name: Portfolio
+    attrs:
+      invalidation_flow: !KeyOf sign-out-flow
+      logout_method: frontchannel
+      logout_uri: !Format ["%s/auth/frontchannel-logout", !Env MAIN_SITE_URL]
+
+  # --- Tell the admins about new requests ------------------------------------------------------
+  - model: authentik_policies_event_matcher.eventmatcherpolicy
+    id: ud-match-new-user
+    identifiers:
+      name: platform-match-new-user
+    attrs:
+      action: model_created
+      model: authentik_core.user
+  - model: authentik_events.notificationrule
+    id: ud-notify-new-user
+    identifiers:
+      name: platform-notify-new-user
+    attrs:
+      severity: notice
+      destination_group: !Find [authentik_core.group, [name, authentik Admins]]
+      transports:
+        - !Find [authentik_events.notificationtransport, [name, default-local-transport]]
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf ud-notify-new-user
+      order: 0
+    attrs:
+      policy: !KeyOf ud-match-new-user
+  # (Admin emails about new requests come from platform-access-request-emails above.)
+
+  # --- "You're in": email the person when an admin approves an app --------------------------
+  # Runs for every event; acts only on user or group changes. Anyone whose `requested_apps`
+  # includes an app whose group they are now in gets a "you're in" email for it, and the app moves
+  # to `approved_apps`, so each email goes once. Returns False, so this rule never creates a
+  # notification itself.
+  - model: authentik_policies_expression.expressionpolicy
+    id: access-approved-email
+    identifiers:
+      name: platform-access-approved-email
+    attrs:
+      expression: !Format
+        - |
+          event = request.context.get("event")
+          if not event or event.action != "model_updated":
+              return False
+          model = event.context.get("model", {})
+          if model.get("app") != "authentik_core" or model.get("model_name") not in ("user", "group"):
+              return False
+          APPS = {
+              "portfolio": ("Portfolio", "%s", "portfolio-members"),
+              "user-directory": ("User Directory", "%s/users", "user-directory-editors"),
+              "api": ("API", "%s/docs/", "api-editors"),
+          }
+          from authentik.core.models import User
+          from authentik.lib.config import CONFIG
+          for user in User.objects.filter(attributes__has_key="requested_apps"):
+              requested = [slug for slug in user.attributes.get("requested_apps", []) if slug in APPS]
+              held = set(user.groups.values_list("name", flat=True))
+              approved = [slug for slug in requested if APPS[slug][2] in held]
+              if not approved:
+                  continue
+              user.attributes["requested_apps"] = [slug for slug in requested if slug not in approved]
+              user.attributes["approved_apps"] = sorted(set(user.attributes.get("approved_apps", [])) | set(approved))
+              user.save()
+              if not user.is_active or not user.email or CONFIG.get("email.host") in ("", "localhost"):
+                  continue
+              for slug in approved:
+                  app_name, app_url, _ = APPS[slug]
+                  ak_send_email(user.email, "You're in: your " + app_name + " access is approved", template="email/access_request_approved.html", context={"name": user.name or user.username, "username": user.username, "app_name": app_name, "app_url": app_url, "button_url": app_url, "button_label": "Open the " + app_name, "site_name": "%s", "main_site_url": "%s"})
+          return False
+        - !Env MAIN_SITE_URL
+        - !Env USER_DIRECTORY_URL
+        - !Env API_URL
+        - !Env [AUTHENTIK_BRAND_TITLE, TheBensage]
+        - !Env MAIN_SITE_URL
+  - model: authentik_events.notificationrule
+    id: access-approved-rule
+    identifiers:
+      name: platform-access-approved-email
+    attrs:
+      severity: notice
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf access-approved-rule
+      order: 0
+    attrs:
+      policy: !KeyOf access-approved-email

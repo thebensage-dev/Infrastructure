@@ -1,0 +1,8 @@
+{% extends "email/site_base.html" %}
+{# Sent when an admin activates someone who asked for access (blueprint policy platform-access-approved-email). #}
+{% block heading %}You're in{% endblock %}
+{% block heading_text %}You're in{% endblock %}
+{% block content %}
+<p style="margin: 0 0 14px 0;">Hi {{ name }},</p>
+<p style="margin: 0;">Your access to the <strong style="color: [[light.foreground]];">{{ app_name }}</strong> has been approved. Sign in with the username <strong style="color: [[light.foreground]];">{{ username }}</strong> and the password you chose when you asked.</p>
+{% endblock %}

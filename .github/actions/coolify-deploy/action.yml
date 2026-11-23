@@ -1,0 +1,14 @@
+name: Deploy to Coolify
+description: >-
+  The one deploy step for every thebensage-dev repo. Writes the app's runtime environment into
+  Coolify from the job's APP_ENV_<NAME> variables (derive:<label> values become HMACs of
+  PLATFORM_SECRET), points the app at the new image tag or commit, deploys and waits for the
+  result. Everything comes from the calling job's env; see deploy.sh for the variables.
+  Used as `thebensage-dev/Infrastructure/.github/actions/coolify-deploy@main` by the app repos and
+  as `./.github/actions/coolify-deploy` by Infrastructure itself.
+runs:
+  using: composite
+  steps:
+    - name: Update the Coolify app and deploy it
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/deploy.sh"
