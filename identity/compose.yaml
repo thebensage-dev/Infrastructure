@@ -47,8 +47,15 @@ services:
       AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
       # One web worker is plenty for a handful of people and saves about 250 MB of RAM.
       AUTHENTIK_WEB__WORKERS: "1"
-      # Lets the access-request policies (run here) skip email when no SMTP server is set.
+      # Email: the server builds each message (sender included) when a flow runs and the worker
+      # sends it, so both need the full settings, from the same variables as the worker's.
+      # Without SMTP_HOST the access-request policies (run here) skip email.
       AUTHENTIK_EMAIL__HOST: ${SMTP_HOST:-}
+      AUTHENTIK_EMAIL__PORT: ${SMTP_PORT:-587}
+      AUTHENTIK_EMAIL__USERNAME: ${SMTP_USERNAME:-}
+      AUTHENTIK_EMAIL__PASSWORD: ${SMTP_PASSWORD:-}
+      AUTHENTIK_EMAIL__USE_TLS: ${SMTP_USE_TLS:-true}
+      AUTHENTIK_EMAIL__FROM: ${ALERT_EMAIL_FROM:-}
     shm_size: 512mb
     expose:
       - "9000"
@@ -58,7 +65,16 @@ services:
 
   authentik-worker:
     build: ./authentik
-    command: worker
+    # Re-applies the platform blueprint on every start, then starts the worker as the image does
+    # (dumb-init -- ak worker). authentik only re-applies a blueprint whose file changed, but
+    # !Env values (like ALERT_EMAIL_TO) are copied into the objects when it's applied, and this
+    # container is recreated whenever its env changes. A failed apply (e.g. on the very first
+    # start, before the database is set up) doesn't stop the worker; it applies it itself then.
+    entrypoint: ["dumb-init", "--", "/bin/sh", "-c"]
+    command:
+      [
+        'ak apply_blueprint custom/platform.yaml || echo "Blueprint apply failed, the worker retries it"; exec ak worker',
+      ]
     restart: unless-stopped
     depends_on:
       authentik-db:

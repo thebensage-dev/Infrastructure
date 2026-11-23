@@ -27,7 +27,7 @@ The VPS stacks don't depend on the Node repos: no npm, no `NODE_AUTH_TOKEN`. The
 ## Prerequisites
 
 - A Coolify VPS with DNS for `id.<domain>` and `grafana.<domain>`.
-- An SMTP account for alert and access-request emails. Gmail with an [app password](https://myaccount.google.com/apppasswords) for now; another provider later is just new values under [Deploying](#deploying).
+- An SMTP account for alert and access-request emails: SMTP2GO, with `thebensage.com` verified as a sender domain (its DNS records in Cloudflare, DNS only). Another provider later is just new values under [Deploying](#deploying).
 - Docker Desktop, only to try the stacks locally.
 
 ## What you get
@@ -89,19 +89,19 @@ In this repo the `deploy` job deploys only the stacks whose folder changed (`ide
 
 **Redeploying everything** (a new server, or after a restore): Actions > CI > **Run workflow**, stack `both`, tick **Also redeploy the sites**, then approve. After the platform is up it starts each site's pipeline from `sites.yml`; approve those as they come in. Pick stack `none` to only redeploy the sites. Starting another repo's workflow needs the secret `SITES_DISPATCH_TOKEN`: a fine-grained token (GitHub > Settings > Developer settings > Fine-grained tokens) for the four site repos with **Actions: Read and write**.
 
-**One-time setup for this repo:** Settings > Environments > New environment `production`: tick **Required reviewers** and add yourself (later, your team), and under **Deployment branches and tags** allow only `main`. **Secrets** are environment secrets there, so only an approved deploy from `main` can read them; a pull request or another branch never sees them. **Variables** aren't secret and are set once for every repo as organization variables (thebensage-dev > Settings > Secrets and variables > Actions > Variables). The script below ("Every value for all five repos at once") sets all of it. The email settings are all set explicitly, so moving off Gmail later only means new values (and a redeploy), no code change. The deploy stops with a list of anything missing. Until `DOMAIN` exists, the deploy job is skipped.
+**One-time setup for this repo:** Settings > Environments > New environment `production`: tick **Required reviewers** and add yourself (later, your team), and under **Deployment branches and tags** allow only `main`. **Secrets** are environment secrets there, so only an approved deploy from `main` can read them; a pull request or another branch never sees them. **Variables** aren't secret and are set once for every repo as organization variables (thebensage-dev > Settings > Secrets and variables > Actions > Variables). The script below ("Every value for all five repos at once") sets all of it. The email settings (SMTP2GO now) are all set explicitly, so another provider later only means new values (and a redeploy), no code change. A new `ALERT_EMAIL_TO` reaches authentik by itself: the worker re-applies the blueprint on every start. The deploy stops with a list of anything missing. Until `DOMAIN` exists, the deploy job is skipped.
 
 | Name              | Kind               | Value                                                                                                                                                                                         |
 | ----------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DOMAIN`          | org variable       | `example.com`. Every address comes from it (`id.`, `grafana.`, `users.`, `coolify.`…), and so does the Live status token, so Portfolio's footer link matches without copying anything.        |
 | `COOLIFY_TOKEN`   | environment secret | Coolify API token with **write** and **deploy** (Keys & Tokens > API tokens; turn on Settings > Advanced > API Access first)                                                                  |
 | `PLATFORM_SECRET` | environment secret | 64 random characters, the same value as in UserDirectory and Portfolio. The pipeline derives the OIDC client secrets from it (`derive:` in `ci.yml`), so authentik, Grafana, the User Directory and Portfolio agree. |
-| `SMTP_HOST`       | org variable       | the SMTP server. Gmail for now: `smtp.gmail.com`                                                                                                                                              |
-| `SMTP_PORT`       | org variable       | Gmail: `587`                                                                                                                                                                                  |
-| `SMTP_USE_TLS`    | org variable       | `true` for STARTTLS on port 587 (Gmail). authentik reads it; Grafana negotiates STARTTLS by itself                                                                                            |
-| `SMTP_USERNAME`   | org variable       | the SMTP login. Gmail: your Gmail address                                                                                                                                                     |
-| `SMTP_PASSWORD`   | environment secret | the SMTP password. Gmail: an [app password](https://myaccount.google.com/apppasswords)                                                                                                        |
-| `ALERT_EMAIL_FROM`| org variable       | the sender of alerts and access-request emails. Gmail: your Gmail address (Gmail rewrites any other sender)                                                                                   |
+| `SMTP_HOST`       | org variable       | the SMTP server. SMTP2GO: `mail.smtp2go.com`                                                                                                                                                  |
+| `SMTP_PORT`       | org variable       | SMTP2GO: `587`                                                                                                                                                                                |
+| `SMTP_USE_TLS`    | org variable       | `true` for STARTTLS on port 587 (SMTP2GO). authentik reads it; Grafana negotiates STARTTLS by itself                                                                                            |
+| `SMTP_USERNAME`   | org variable       | the SMTP login. SMTP2GO: the SMTP user's name                                                                                                                                                 |
+| `SMTP_PASSWORD`   | environment secret | the SMTP password. SMTP2GO: the SMTP user's password                                                                                                                                     |
+| `ALERT_EMAIL_FROM`| org variable       | the sender of alerts and access-request emails: `noreply@thebensage.com` (on a domain verified in SMTP2GO)                                                                                      |
 | `ALERT_EMAIL_TO`  | org variable       | who gets alerts and new access requests (several: separate with `;`); also authentik's admin email on the first deploy                                                                         |
 
 Optional: `GRAFANA_DISABLE_LOGIN_FORM` (variable, `true` once authentik sign-in to Grafana works), `SITES_DISPATCH_TOKEN` (secret, for "Also redeploy the sites" above), and overrides `COOLIFY_URL` (if Coolify isn't at `https://coolify.<DOMAIN>`) and `COOLIFY_IDENTITY_UUID` / `COOLIFY_MONITORING_UUID` (if the Coolify apps aren't named `identity` and `monitoring`).
@@ -111,17 +111,19 @@ Optional: `GRAFANA_DISABLE_LOGIN_FORM` (variable, `true` once authentik sign-in 
 ```powershell
 $org = 'thebensage-dev'
 $domain = Read-Host 'Domain (example.com)'
-$smtpHost = Read-Host 'SMTP server (Gmail: smtp.gmail.com)'
-$smtpPort = Read-Host 'SMTP port (Gmail: 587)'
-$smtpUser = Read-Host 'SMTP username (Gmail: your Gmail address)'
-$mailFrom = Read-Host 'Send emails from (Gmail: your Gmail address)'
+$smtpHost = Read-Host 'SMTP server (SMTP2GO: mail.smtp2go.com)'
+$smtpPort = Read-Host 'SMTP port (SMTP2GO: 587)'
+$smtpUser = Read-Host 'SMTP username (SMTP2GO: the SMTP user)'
+$mailFrom = Read-Host 'Send emails from (noreply@thebensage.com)'
 $mailTo = Read-Host 'Send alerts and access requests to'
 $coolify = Read-Host 'Coolify API token (Enter to skip until Coolify is set up)' -AsSecureString
-$smtpPass = Read-Host 'SMTP password, Gmail: an app password (Enter to keep the current one)' -AsSecureString
+$smtpPass = Read-Host 'SMTP password, the SMTP2GO SMTP user''s password (Enter to keep the current one)' -AsSecureString
 function Get-PlainText($s) { [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s)) }
 $bytes = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
 $platform = ($bytes | ForEach-Object { $_.ToString('x2') }) -join ''
 $me = gh api user --jq .id
+# Request bodies go through a file: Windows PowerShell 5.1 doesn't pipe text to gh reliably.
+$tmp = Join-Path $env:TEMP 'gh-body.json'
 
 # Organization variables: not secret, one place for every repo.
 gh variable set DOMAIN --org $org --visibility all -b $domain
@@ -130,14 +132,15 @@ foreach ($k in $mail.Keys) { gh variable set $k --org $org --visibility selected
 
 foreach ($r in 'SharedUI', 'Infrastructure', 'UserDirectory', 'Portfolio', 'Api') {
   # The production environment: your approval, main only.
-  "{`"reviewers`":[{`"type`":`"User`",`"id`":$me}],`"deployment_branch_policy`":{`"protected_branches`":false,`"custom_branch_policies`":true}}" |
-    gh api -X PUT "repos/$org/$r/environments/production" --input - | Out-Null
+  Set-Content -Path $tmp -Encoding ascii -Value "{`"reviewers`":[{`"type`":`"User`",`"id`":$me}],`"deployment_branch_policy`":{`"protected_branches`":false,`"custom_branch_policies`":true}}"
+  gh api -X PUT "repos/$org/$r/environments/production" --input $tmp | Out-Null
+  if (-not $?) { Write-Output "$r : creating the environment failed (see the error above)"; continue }
   $policies = gh api "repos/$org/$r/environments/production/deployment-branch-policies" --jq '.branch_policies[].name'
   if ($policies -notcontains 'main') { gh api -X POST "repos/$org/$r/environments/production/deployment-branch-policies" -f name=main | Out-Null }
 
   # Environment secrets: only an approved deploy from main can read them.
   # Empty answers are skipped, and an existing PLATFORM_SECRET is kept.
-  $existing = gh secret list -R "$org/$r" -e production --json name --jq '.[].name'
+  $existing = gh secret list -R "$org/$r" -e production | ForEach-Object { ($_ -split "`t")[0] }
   if ($coolify.Length -gt 0) { gh secret set COOLIFY_TOKEN -R "$org/$r" -e production -b (Get-PlainText $coolify) }
   if ($r -in 'Infrastructure', 'UserDirectory', 'Portfolio' -and $existing -notcontains 'PLATFORM_SECRET') { gh secret set PLATFORM_SECRET -R "$org/$r" -e production -b $platform }
   if ($r -eq 'Infrastructure' -and $smtpPass.Length -gt 0) { gh secret set SMTP_PASSWORD -R "$org/$r" -e production -b (Get-PlainText $smtpPass) }
@@ -151,10 +154,12 @@ foreach ($r in 'SharedUI', 'Infrastructure', 'UserDirectory', 'Portfolio', 'Api'
       '"rules":[{"type":"deletion"},{"type":"non_fast_forward"},' +
       '{"type":"pull_request","parameters":{"required_approving_review_count":0,"dismiss_stale_reviews_on_push":false,"require_code_owner_review":false,"require_last_push_approval":false,"required_review_thread_resolution":false}},' +
       '{"type":"required_status_checks","parameters":{"strict_required_status_checks_policy":false,"required_status_checks":[{"context":"Check"}]}}]}'
-    $rules | gh api -X POST "repos/$org/$r/rulesets" --input - | Out-Null
+    Set-Content -Path $tmp -Encoding ascii -Value $rules
+    gh api -X POST "repos/$org/$r/rulesets" --input $tmp | Out-Null
   }
   Write-Output "$r done"
 }
+Remove-Item $tmp -ErrorAction SilentlyContinue
 ```
 
 To change one value later, use the same `gh` line on its own, or the GitHub website: organization variables under thebensage-dev > Settings > Secrets and variables > Actions, secrets under each repo > Settings > Environments > `production`. When the team grows, add teammates as required reviewers there: they can then approve deploys without ever seeing a secret.
@@ -215,7 +220,7 @@ Password reset by email needs the SMTP settings (shared with Grafana) and a reco
 1. Coolify > New resource > the same repo, named `monitoring`. Build pack **Docker Compose**, base directory `/monitoring`, compose file `/compose.yaml`.
 2. Environment variables: written by the pipeline (the keys in `monitoring/.env.example`). Coolify generates `SERVICE_PASSWORD_GRAFANAADMIN`, the password of Grafana's break-glass `admin`; copy it into your password manager.
    - `MONITORED_SITES` is built from `sites.yml` with your `DOMAIN`, e.g. `https://example.com,https://users.example.com,https://ui.example.com,https://api.example.com/health,https://id.example.com/-/health/ready/`. The API's `/health` also checks its PostgreSQL, and authentik's readiness check does the same for its own.
-   - Email: the `SMTP_*` and `ALERT_EMAIL_*` GitHub variables above (Gmail for now). Several recipients in `ALERT_EMAIL_TO`: separate with `;`.
+   - Email: the `SMTP_*` and `ALERT_EMAIL_*` GitHub variables above (SMTP2GO). Several recipients in `ALERT_EMAIL_TO`: separate with `;`.
 3. Domain: set it on the `grafana` service only, as `https://grafana.<domain>:3000`. Leave every other service without a domain.
 4. Deploy. Open `https://grafana.<domain>` and choose **Sign in with authentik**.
 5. Test the alerts: Alerting > Contact points > Email > **Test**.
