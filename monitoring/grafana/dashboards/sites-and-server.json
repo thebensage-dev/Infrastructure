@@ -35,8 +35,8 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 5,
-        "w": 24,
+        "h": 8,
+        "w": 8,
         "x": 0,
         "y": 1
       },
@@ -62,12 +62,12 @@
             "lastNotNull"
           ]
         },
-        "justifyMode": "center",
-        "orientation": "vertical",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
         "wideLayout": true,
         "text": {
           "titleSize": 14,
-          "valueSize": 28
+          "valueSize": 20
         }
       },
       "fieldConfig": {
@@ -123,10 +123,10 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 4,
-        "w": 24,
-        "x": 0,
-        "y": 10
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 1
       },
       "targets": [
         {
@@ -150,12 +150,12 @@
             "lastNotNull"
           ]
         },
-        "justifyMode": "center",
-        "wideLayout": false,
-        "orientation": "vertical",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "orientation": "horizontal",
         "text": {
           "titleSize": 14,
-          "valueSize": 28
+          "valueSize": 20
         }
       },
       "fieldConfig": {
@@ -202,10 +202,10 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 4,
-        "w": 24,
-        "x": 0,
-        "y": 6
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 1
       },
       "targets": [
         {
@@ -229,13 +229,13 @@
             "lastNotNull"
           ]
         },
-        "justifyMode": "center",
-        "wideLayout": false,
+        "justifyMode": "auto",
+        "wideLayout": true,
         "text": {
           "titleSize": 14,
-          "valueSize": 28
+          "valueSize": 20
         },
-        "orientation": "vertical"
+        "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {
@@ -283,7 +283,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 9
       },
       "targets": [
         {
@@ -321,7 +321,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 17
       },
       "panels": []
     },
@@ -337,7 +337,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 23
+        "y": 18
       },
       "targets": [
         {
@@ -388,7 +388,7 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 23
+        "y": 18
       },
       "targets": [
         {
@@ -439,7 +439,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 23
+        "y": 18
       },
       "targets": [
         {
@@ -491,7 +491,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 23
+        "y": 18
       },
       "targets": [
         {
@@ -539,7 +539,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 24
       },
       "targets": [
         {
@@ -579,7 +579,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 37
+        "y": 32
       },
       "panels": []
     },
@@ -595,7 +595,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 38
+        "y": 33
       },
       "targets": [
         {
@@ -627,7 +627,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 38
+        "y": 33
       },
       "targets": [
         {
@@ -656,7 +656,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 47
+        "y": 42
       },
       "panels": []
     },
@@ -673,7 +673,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 43
       },
       "targets": [
         {
@@ -722,7 +722,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 51
       },
       "targets": [
         {
