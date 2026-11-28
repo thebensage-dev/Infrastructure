@@ -24,7 +24,7 @@ RUN node render-brand.mjs /out
 
 # Pinned to an exact release; Dependabot proposes newer tags. Read the release notes first:
 # authentik only supports upgrading one minor line at a time (e.g. 2026.8 -> 2026.11).
-FROM ghcr.io/goauthentik/server:2026.8.6
+FROM ghcr.io/goauthentik/server:2026.8.7
 
 # Everything under /blueprints is discovered and applied by the worker on start, and again
 # whenever a file changes.
