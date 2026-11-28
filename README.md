@@ -4,25 +4,26 @@ Monitoring and sign-in for the sites on the Coolify VPS (Portfolio, the User Dir
 
 ## What is in this repo
 
-| Folder        | What it runs                                                                                                                                                                                                                                                         | URL                     |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| `monitoring/` | **Prometheus** collects metrics and **Loki** stores every container's logs (sent by **Alloy**). **Grafana** shows dashboards and logs and sends alerts. Three small exporters feed Prometheus: blackbox (site checks), node (the VPS) and cAdvisor (each container). | `grafana.<domain>` only |
-| `identity/`   | **authentik**: single sign-on (OIDC) for Portfolio, the User Directory, the API, Grafana and later tools. Passwords plus optional passkeys and two-factor, groups, one shared "Request access" page where people pick apps and you approve each one (with emails), and invite links for guests.                               | `id.<domain>`           |
-| `local/`      | **Local only, never deployed.** Portfolio, User Directory, Storybook and the API built from the sibling repos, behind a Caddy proxy.                                                                                                                                          | `localhost:8080`        |
+| Folder        | What it runs                                                                                                                                                                                                                                                                                    | URL                     |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `monitoring/` | **Prometheus** collects metrics and **Loki** stores every container's logs (sent by **Alloy**). **Grafana** shows dashboards and logs and sends alerts. Three small exporters feed Prometheus: blackbox (site checks), node (the VPS) and cAdvisor (each container).                            | `grafana.<domain>` only |
+| `identity/`   | **authentik**: single sign-on (OIDC) for Portfolio, the User Directory, the API, Grafana and later tools. Passwords plus optional passkeys and two-factor, groups, one shared "Request access" page where people pick apps and you approve each one (with emails), and invite links for guests. | `id.<domain>`           |
+| `local/`      | **Local only, never deployed.** Portfolio, User Directory, Storybook, the API and the CMS built from the sibling repos, behind a Caddy proxy.                                                                                                                                                            | `localhost:8080`        |
 
 Coolify's own features cover the rest: deploy failures, server disk usage and "server unreachable" notifications, and live container logs on each app's Logs tab (recent lines only; Grafana keeps 14 days of every container's logs, searchable together).
 
 ## How it fits with the other repos
 
-| Repo                      | Role                                                                                                                     |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| **Infrastructure** (this) | authentik at `id.<domain>` and Grafana at `grafana.<domain>`, on the same Coolify VPS as the sites. It watches them all. |
-| Portfolio                 | Landing site at `<domain>`.                                                                                              |
-| UserDirectory             | The app at `users.<domain>`. It keeps no data: it reads and writes through the Api.                                      |
-| SharedUI                  | `@thebensage-dev/ui` (GitHub Packages) and its Storybook at `ui.<domain>`.                                                  |
-| Api                       | The .NET API at `api.<domain>`, with its own PostgreSQL. `/health` is checked, so a broken database shows.                 |
+| Repo                      | Role                                                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Infrastructure** (this) | authentik at `id.<domain>` and Grafana at `grafana.<domain>`, on the same Coolify VPS as the sites. It watches them all.              |
+| Portfolio                 | Landing site at `<domain>`.                                                                                                           |
+| UserDirectory             | The app at `users.<domain>`. It keeps no data: it reads and writes through the Api.                                                   |
+| SharedUI                  | `@thebensage-dev/ui` (GitHub Packages) and its Storybook at `ui.<domain>`.                                                            |
+| Api                       | The .NET API at `api.<domain>`, with its own PostgreSQL. `/health` is checked, so a broken database shows.                            |
+| Cms                       | Payload CMS at `cms.<domain>`, with its own PostgreSQL: the sites' content. `/health` is checked. Signs in through authentik (`cms`). |
 
-The VPS stacks don't depend on the Node repos: no npm, no `NODE_AUTH_TOKEN`. Their only link is the list of URLs in `MONITORED_SITES`. The local all-sites stack in `local/` is the exception: it builds the four sibling repos (see [Running all the sites locally](#running-all-the-sites-locally)).
+The VPS stacks don't depend on the Node repos: no npm, no `NODE_AUTH_TOKEN`. Their only link is the list of URLs in `MONITORED_SITES`. The local all-sites stack in `local/` is the exception: it builds the five sibling app repos (see [Running all the sites locally](#running-all-the-sites-locally)).
 
 ## Prerequisites
 
@@ -67,46 +68,46 @@ Measured locally: about 850 MB of RAM for monitoring, most of it Grafana (~590 M
 
 ## CI
 
-One workflow, `.github/workflows/ci.yml` ("CI"), with the same shape as the other three repos:
+One workflow, `.github/workflows/ci.yml` ("CI"), with the same shape as the other repos:
 
-| Job                  | Runs on                         | What it does                                                                                                                                                                                                 |
-| -------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Check**            | every PR and push               | Lints the workflows and shell scripts (actionlint, shellcheck), checks both compose files resolve and the Prometheus config with `promtool`, then builds every identity and monitoring image.            |
-| **Find the changed stacks** | push to `main`, manual run | Works out which stacks changed (`identity/`, `monitoring/` or `sites.yml`), or takes the stack picked in a manual run. |
-| **Check Coolify is ready** | push to `main`, manual run | The same gate as the other repos: `DOMAIN` set and `https://coolify.<DOMAIN>/api/health` answers. If not, deploys are skipped with a notice, so the run stays green before go-live. |
-| **Deploy to Coolify** | after your approval            | Checks every deploy value is set, then deploys identity (first) and/or monitoring through `.github/actions/coolify-deploy`, pinned to this commit, and waits for Coolify to finish.                       |
-| **Redeploy the sites** | manual run with the box ticked | Starts each site's own CI on `main` from `sites.yml` (needs `SITES_DISPATCH_TOKEN`).                                                                                                                  |
+| Job                         | Runs on                        | What it does                                                                                                                                                                                  |
+| --------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Check**                   | every PR and push              | Lints the workflows and shell scripts (actionlint, shellcheck), checks both compose files resolve and the Prometheus config with `promtool`, then builds every identity and monitoring image. |
+| **Find the changed stacks** | push to `main`, manual run     | Works out which stacks changed (`identity/`, `monitoring/` or `sites.yml`), or takes the stack picked in a manual run.                                                                        |
+| **Check Coolify is ready**  | push to `main`, manual run     | The same gate as the other repos: `DOMAIN` set and `https://coolify.<DOMAIN>/api/health` answers. If not, deploys are skipped with a notice, so the run stays green before go-live.           |
+| **Deploy to Coolify**       | after your approval            | Checks every deploy value is set, then deploys identity (first) and/or monitoring through `.github/actions/coolify-deploy`, pinned to this commit, and waits for Coolify to finish.           |
+| **Redeploy the sites**      | manual run with the box ticked | Starts each site's own CI on `main` from `sites.yml` (needs `SITES_DISPATCH_TOKEN`).                                                                                                          |
 
 The identity build downloads SharedUI's `brand/` files from its release tag (`SHAREDUI_REF` in `identity/authentik/Dockerfile`), so **Check** can only pass once SharedUI is public on GitHub and its tag (`v1.0.0`) exists. `.github/dependabot.yml` opens weekly PRs for image tags (Dockerfiles and compose files) and actions.
 
 ## Deploying
 
-Each repo deploys itself from its own GitHub Actions pipeline: on a push to `main` (or Actions > CI > **Run workflow**) it checks the change, then waits for your approval, then sends it to Coolify. Settings and secrets live only in GitHub (repository or organization secrets and variables) and travel to Coolify in that run, through Coolify's API; nothing is typed into Coolify and its Auto Deploy stays off. The deploy step itself lives once, in this repo: the composite action `.github/actions/coolify-deploy` (`action.yml` + `deploy.sh`). The other three repos call it as `thebensage-dev/Infrastructure/.github/actions/coolify-deploy@main`, and this repo uses its own copy at the same commit, so a fix to it is one edit.
+Each repo deploys itself from its own GitHub Actions pipeline: on a push to `main` (or Actions > CI > **Run workflow**) it checks the change, then waits for your approval, then sends it to Coolify. Settings and secrets live only in GitHub (repository or organization secrets and variables) and travel to Coolify in that run, through Coolify's API; nothing is typed into Coolify and its Auto Deploy stays off. The deploy step itself lives once, in this repo: the composite action `.github/actions/coolify-deploy` (`action.yml` + `deploy.sh`). The other repos call it as `thebensage-dev/Infrastructure/.github/actions/coolify-deploy@main`, and this repo uses its own copy at the same commit, so a fix to it is one edit.
 
-In this repo the `deploy` job deploys only the stacks whose folder changed (`identity/`, `monitoring/`), identity first, each pinned to the commit. The apps (Portfolio, User Directory, Storybook) are built into images by their own pipelines and deployed the same way; see their READMEs.
+In this repo the `deploy` job deploys only the stacks whose folder changed (`identity/`, `monitoring/`), identity first, each pinned to the commit. The apps (Portfolio, the User Directory, the API, the CMS and Storybook) are built into images by their own pipelines and deployed the same way: **Check** on every push, then on `main` an image on `ghcr.io/thebensage-dev/<app>`, the Coolify check, and the approval-gated deploy, which writes the app's settings (derived from `DOMAIN` and `PLATFORM_SECRET`) into its Coolify app. Each app repo needs read access to the `@thebensage-dev` packages it installs (on GitHub: the package > Package settings > Manage Actions access > add the repo with **Read**), which also lets its Dependabot read them. Each app's Coolify settings are in its README.
 
 **`sites.yml`** lists the sites the platform hosts: each one's repo and the URLs Grafana should check. The pipeline builds Grafana's `MONITORED_SITES` from it (changing it redeploys monitoring), so adding a site means one entry there, its DNS record and the same pipeline in its repo.
 
 **Redeploying everything** (a new server, or after a restore): Actions > CI > **Run workflow**, stack `both`, tick **Also redeploy the sites**, then approve. After the platform is up it starts each site's pipeline from `sites.yml`; approve those as they come in. Pick stack `none` to only redeploy the sites. Starting another repo's workflow needs the secret `SITES_DISPATCH_TOKEN`: a fine-grained token (GitHub > Settings > Developer settings > Fine-grained tokens) for the four site repos with **Actions: Read and write**.
 
-**One-time setup for this repo:** Settings > Environments > New environment `production`: tick **Required reviewers** and add yourself (later, your team), and under **Deployment branches and tags** allow only `main`. **Secrets** are environment secrets there, so only an approved deploy from `main` can read them; a pull request or another branch never sees them. **Variables** aren't secret and are set once for every repo as organization variables (thebensage-dev > Settings > Secrets and variables > Actions > Variables). The script below ("Every value for all five repos at once") sets all of it. The email settings (SMTP2GO now) are all set explicitly, so another provider later only means new values (and a redeploy), no code change. A new `ALERT_EMAIL_TO` reaches authentik by itself: the worker re-applies the blueprint on every start. The deploy stops with a list of anything missing. Until `DOMAIN` exists, the deploy job is skipped.
+**One-time setup for this repo:** Settings > Environments > New environment `production`: tick **Required reviewers** and add yourself (later, your team), and under **Deployment branches and tags** allow only `main`. **Secrets** are environment secrets there, so only an approved deploy from `main` can read them; a pull request or another branch never sees them. **Variables** aren't secret and are set once for every repo as organization variables (thebensage-dev > Settings > Secrets and variables > Actions > Variables). The script below ("Every value for all six repos at once") sets all of it. The email settings (SMTP2GO now) are all set explicitly, so another provider later only means new values (and a redeploy), no code change. A new `ALERT_EMAIL_TO` reaches authentik by itself: the worker re-applies the blueprint on every start. The deploy stops with a list of anything missing. Until `DOMAIN` exists, the deploy job is skipped.
 
-| Name              | Kind               | Value                                                                                                                                                                                         |
-| ----------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DOMAIN`          | org variable       | `example.com`. Every address comes from it (`id.`, `grafana.`, `users.`, `coolify.`…), and so does the Live status token, so Portfolio's footer link matches without copying anything.        |
-| `COOLIFY_TOKEN`   | environment secret | Coolify API token with **write** and **deploy** (Keys & Tokens > API tokens; turn on Settings > Advanced > API Access first)                                                                  |
-| `PLATFORM_SECRET` | environment secret | 64 random characters, the same value as in UserDirectory and Portfolio. The pipeline derives the OIDC client secrets from it (`derive:` in `ci.yml`), so authentik, Grafana, the User Directory and Portfolio agree. |
-| `SMTP_HOST`       | org variable       | the SMTP server. SMTP2GO: `mail.smtp2go.com`                                                                                                                                                  |
-| `SMTP_PORT`       | org variable       | SMTP2GO: `587`                                                                                                                                                                                |
-| `SMTP_USE_TLS`    | org variable       | `true` for STARTTLS on port 587 (SMTP2GO). authentik reads it; Grafana negotiates STARTTLS by itself                                                                                            |
-| `SMTP_USERNAME`   | org variable       | the SMTP login. SMTP2GO: the SMTP user's name                                                                                                                                                 |
-| `SMTP_PASSWORD`   | environment secret | the SMTP password. SMTP2GO: the SMTP user's password                                                                                                                                     |
-| `ALERT_EMAIL_FROM`| org variable       | the sender of alerts and access-request emails: `noreply@thebensage.com` (on a domain verified in SMTP2GO)                                                                                      |
-| `ALERT_EMAIL_TO`  | org variable       | who gets alerts and new access requests (several: separate with `;`); also authentik's admin email on the first deploy                                                                         |
+| Name               | Kind               | Value                                                                                                                                                                                                                              |
+| ------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DOMAIN`           | org variable       | `example.com`. Every address comes from it (`id.`, `grafana.`, `users.`, `coolify.`…), and so does the Live status token, so Portfolio's footer link matches without copying anything.                                             |
+| `COOLIFY_TOKEN`    | environment secret | Coolify API token with **write** and **deploy** (Keys & Tokens > API tokens; turn on Settings > Advanced > API Access first)                                                                                                       |
+| `PLATFORM_SECRET`  | environment secret | 64 random characters, the same value as in UserDirectory, Portfolio and Cms. The pipeline derives the OIDC client secrets from it (`derive:` in `ci.yml`), so authentik, Grafana, the User Directory, Portfolio and the CMS agree. |
+| `SMTP_HOST`        | org variable       | the SMTP server. SMTP2GO: `mail.smtp2go.com`                                                                                                                                                                                       |
+| `SMTP_PORT`        | org variable       | SMTP2GO: `587`                                                                                                                                                                                                                     |
+| `SMTP_USE_TLS`     | org variable       | `true` for STARTTLS on port 587 (SMTP2GO). authentik reads it; Grafana negotiates STARTTLS by itself                                                                                                                               |
+| `SMTP_USERNAME`    | org variable       | the SMTP login. SMTP2GO: the SMTP user's name                                                                                                                                                                                      |
+| `SMTP_PASSWORD`    | environment secret | the SMTP password. SMTP2GO: the SMTP user's password                                                                                                                                                                               |
+| `ALERT_EMAIL_FROM` | org variable       | the sender of alerts and access-request emails: `noreply@thebensage.com` (on a domain verified in SMTP2GO)                                                                                                                         |
+| `ALERT_EMAIL_TO`   | org variable       | who gets alerts and new access requests (several: separate with `;`); also authentik's admin email on the first deploy                                                                                                             |
 
 Optional: `GRAFANA_DISABLE_LOGIN_FORM` (variable, `true` once authentik sign-in to Grafana works), `SITES_DISPATCH_TOKEN` (secret, for "Also redeploy the sites" above), and overrides `COOLIFY_URL` (if Coolify isn't at `https://coolify.<DOMAIN>`) and `COOLIFY_IDENTITY_UUID` / `COOLIFY_MONITORING_UUID` (if the Coolify apps aren't named `identity` and `monitoring`).
 
-**Every value for all five repos at once**, with the [GitHub CLI](https://cli.github.com) (`gh auth login` once, as an owner of thebensage-dev, then `gh auth refresh -h github.com -s admin:org` so it may set organization variables; after the five repos are published). Run it in PowerShell. It asks for each value and shows none. It also sets up each repo's `production` environment (you as required reviewer, `main` only) and a ruleset that protects `main`: no deletion or force push, and pull requests need the CI job "Check" to pass (every repo names its first job that). Organization admins (you) can bypass it, so your own pushes from GitHub Desktop still work. Running it again is safe: it keeps an existing `PLATFORM_SECRET` (a new one would change the client secrets and sign everyone out), and a secret you leave empty (press Enter) is skipped, not cleared. So you can run it before the VPS exists, leaving the Coolify token empty, and again once Coolify is up, entering only the token. Setting `DOMAIN` early is fine: every deploy job first checks that `https://coolify.<DOMAIN>` answers, and is skipped (green) until it does.
+**Every value for all six repos at once**, with the [GitHub CLI](https://cli.github.com) (`gh auth login` once, as an owner of thebensage-dev, then `gh auth refresh -h github.com -s admin:org` so it may set organization variables; after the six repos are published). Run it in PowerShell. It asks for each value and shows none. It also sets up each repo's `production` environment (you as required reviewer, `main` only) and a ruleset that protects `main`: no deletion or force push, and pull requests need the CI job "Check" to pass (every repo names its first job that). Organization admins (you) can bypass it, so your own pushes from GitHub Desktop still work. Running it again is safe: it keeps an existing `PLATFORM_SECRET` (a new one would change the client secrets and sign everyone out), and a secret you leave empty (press Enter) is skipped, not cleared. So you can run it before the VPS exists, leaving the Coolify token empty, and again once Coolify is up, entering only the token. Setting `DOMAIN` early is fine: every deploy job first checks that `https://coolify.<DOMAIN>` answers, and is skipped (green) until it does.
 
 ```powershell
 $org = 'thebensage-dev'
@@ -130,7 +131,7 @@ gh variable set DOMAIN --org $org --visibility all -b $domain
 $mail = @{ SMTP_HOST = $smtpHost; SMTP_PORT = $smtpPort; SMTP_USE_TLS = 'true'; SMTP_USERNAME = $smtpUser; ALERT_EMAIL_FROM = $mailFrom; ALERT_EMAIL_TO = $mailTo }
 foreach ($k in $mail.Keys) { gh variable set $k --org $org --visibility selected --repos Infrastructure -b $mail[$k] }
 
-foreach ($r in 'SharedUI', 'Infrastructure', 'UserDirectory', 'Portfolio', 'Api') {
+foreach ($r in 'SharedUI', 'Infrastructure', 'UserDirectory', 'Portfolio', 'Api', 'Cms') {
   # The production environment: your approval, main only.
   Set-Content -Path $tmp -Encoding ascii -Value "{`"reviewers`":[{`"type`":`"User`",`"id`":$me}],`"deployment_branch_policy`":{`"protected_branches`":false,`"custom_branch_policies`":true}}"
   gh api -X PUT "repos/$org/$r/environments/production" --input $tmp | Out-Null
@@ -142,7 +143,7 @@ foreach ($r in 'SharedUI', 'Infrastructure', 'UserDirectory', 'Portfolio', 'Api'
   # Empty answers are skipped, and an existing PLATFORM_SECRET is kept.
   $existing = gh secret list -R "$org/$r" -e production | ForEach-Object { ($_ -split "`t")[0] }
   if ($coolify.Length -gt 0) { gh secret set COOLIFY_TOKEN -R "$org/$r" -e production -b (Get-PlainText $coolify) }
-  if ($r -in 'Infrastructure', 'UserDirectory', 'Portfolio' -and $existing -notcontains 'PLATFORM_SECRET') { gh secret set PLATFORM_SECRET -R "$org/$r" -e production -b $platform }
+  if ($r -in 'Infrastructure', 'UserDirectory', 'Portfolio', 'Cms' -and $existing -notcontains 'PLATFORM_SECRET') { gh secret set PLATFORM_SECRET -R "$org/$r" -e production -b $platform }
   if ($r -eq 'Infrastructure' -and $smtpPass.Length -gt 0) { gh secret set SMTP_PASSWORD -R "$org/$r" -e production -b (Get-PlainText $smtpPass) }
 
   # Protect main (once).
@@ -168,14 +169,14 @@ To change one value later, use the same `gh` line on its own, or the GitHub webs
 
 Everything after the first setup is push, then approve. What can't sensibly live in a pipeline is the one-time groundwork, because the pipeline needs it to exist first:
 
-| When          | Step                                                                       | Why it's manual                                                                 |
-| ------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Once          | Rent the VPS, install Coolify, add the DNS records                         | the pipeline deploys onto them                                                  |
-| Once          | Coolify API access and token; `docker login ghcr.io` on the server         | they're what lets GitHub reach Coolify and Coolify reach the images             |
+| When          | Step                                                                       | Why it's manual                                                                |
+| ------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Once          | Rent the VPS, install Coolify, add the DNS records                         | the pipeline deploys onto them                                                 |
+| Once          | Coolify API access and token; `docker login ghcr.io` on the server         | they're what lets GitHub reach Coolify and Coolify reach the images            |
 | Once per app  | Create the app in Coolify (type, name, domain, volume)                     | the pipeline finds it by name; six apps by hand is quicker than scripting them |
-| Once per repo | The `production` environment and its reviewer; the few values (one script) | they're the pipeline's input                                                    |
-| Once          | Sign in as `akadmin`, add a passkey                                        | the admin's own credentials                                                     |
-| Each change   | Approve the deploy                                                         | your choice: drop the required reviewer to deploy automatically                 |
+| Once per repo | The `production` environment and its reviewer; the few values (one script) | they're the pipeline's input                                                   |
+| Once          | Sign in as `akadmin`, add a passkey                                        | the admin's own credentials                                                    |
+| Each change   | Approve the deploy                                                         | your choice: drop the required reviewer to deploy automatically                |
 
 Passwords that belong to one stack aren't in GitHub at all: Coolify generates them on the first deploy (the `SERVICE_PASSWORD_*` variables in the compose files: authentik's keys, the `akadmin` password and Grafana's `admin` password) and shows them under the app's Environment Variables.
 
@@ -191,10 +192,10 @@ docker login ghcr.io -u TheBensage   # paste the token as the password
 
 Everything authentik needs is created on start from one blueprint, `identity/authentik/blueprints/platform.yaml`, which `identity/authentik/Dockerfile` bakes into the image (one file, because blueprints that depend on each other can hang authentik's worker):
 
-- The groups `grafana-admins`, `grafana-viewers`, `user-directory-editors`, `api-editors` and `portfolio-members`, and the OIDC apps **Grafana** (client id `grafana`), **User Directory** (`user-directory`), **API** (`api`, a public client with PKCE for the API's docs page, so no secret) and **Portfolio** (`portfolio`, the main site) with their callback URLs and secrets. The API also accepts User Directory tokens, which that app forwards on writes.
+- The groups `grafana-admins`, `grafana-viewers`, `user-directory-editors`, `api-editors`, `portfolio-members`, `cms-editors` and `cms-viewers`, and the OIDC apps **Grafana** (client id `grafana`), **User Directory** (`user-directory`), **API** (`api`, a public client with PKCE for the API's docs page, so no secret), **Portfolio** (`portfolio`, the main site) and **CMS** (`cms`, Payload at `cms.<domain>`, where the sites' content is edited) with their callback URLs and secrets. Like Grafana, the CMS keeps group rules (`cms-editors`, `cms-viewers` and `authentik Admins`; add people to them by hand, they can't be requested), and it checks the groups itself too: editors and admins may change content, viewers may only look. The API also accepts User Directory tokens, which that app forwards on writes.
 - **Single sign-on, and who may do what.** Any authentik account can sign in to Portfolio, the User Directory and the API: those apps have no group rules in authentik, so their silent sign-in check (OIDC `prompt=none`) always comes straight back, signed in or not. (With group rules, someone signed in elsewhere but not in that app's group would be stuck on authentik's "access denied" page.) Each app then reads the `groups` claim in the token: `portfolio-members` unlock the colour palette, `user-directory-editors` may edit the directory, `api-editors` may write through the API's docs, and `authentik Admins` may do everything. Everyone else signed in sees "request access" in the app. Grafana keeps its group rules, since it's yours alone.
 - A "Sign in to TheBensage" page (`AUTHENTIK_BRAND_TITLE`) with username and password on one screen and passkey autofill, used by Portfolio, Grafana and authentik itself, and the User Directory's own "Sign in to the User Directory" page (`user-directory-sign-in`). Both have a "Need an account?" link to Request access.
-- **Request access** (`request-access`, one page for every app; the apps link to `/if/flow/request-access/?app=<slug>`, which ticks that app). Someone new first creates their account (name, email, username, password), which works straight away but grants nothing; someone already signed in skips that. Then they tick the apps they'd like (Portfolio, User Directory, API) with an optional reason, and authentik sends them back to the app they came from, signed in. Their picks are kept on the user (attribute `requested_apps`), and the admins get an email (plus the bell for a new account). See "Approve an access request" below. For another app, add it to the `APPS` lists in the blueprint's request expressions and give it a checkbox.
+- **Request access** (`request-access`, one page for every app; the apps link to `/if/flow/request-access/?app=<slug>`, which ticks that app). Someone new first creates their account (name, email, username, password), which works straight away but grants nothing; someone already signed in skips that. Then they tick the apps they'd like (Portfolio, User Directory, API, and the CMS read-only, approved into `cms-viewers`) with an optional reason, and authentik sends them back to the app they came from, signed in. Their picks are kept on the user (attribute `requested_apps`), and the admins get an email (plus the bell for a new account). See "Approve an access request" below. For another app, add it to the `APPS` lists in the blueprint's request expressions and give it a checkbox.
 - The invitation-only guest sign-up `guest-invite` (name, email, username, password and a link to the privacy notice). New users land in `user-directory-editors`.
 - People who request access or accept an invite are **external** users: they can sign in to the apps they're allowed into, and opening `id.<domain>` sends them to the User Directory (the brand's default application) rather than authentik's own pages. Admin "Impersonate" is switched off (`authentik/settings.py`), since it only swaps authentik's session, not the apps'.
 - **Your account** (`account`, `account-password`): any signed-in user can change their name and email, or their password (after entering the current one), then goes back to the app they came from (`?app=portfolio` or `user-directory`) through a fresh sign-in. Portfolio and the User Directory link to it from the signed-in name in their header.
@@ -255,9 +256,9 @@ All data lives in named volumes that Coolify keeps across redeploys: `authentik_
 
 ## Running all the sites locally
 
-`local/compose.yaml` builds Portfolio, the User Directory, Storybook and the API from the sibling folders (`../../Portfolio`, `../../UserDirectory`, `../../SharedUI`, `../../Api`; the API with its own PostgreSQL, `api-db`) and puts them behind a small [Caddy](https://caddyserver.com) proxy that routes by host name. It's for testing on your machine only. On the VPS each site is its own Coolify app, and Coolify's proxy does the routing and HTTPS.
+`local/compose.yaml` builds Portfolio, the User Directory, Storybook, the API and the CMS from the sibling folders (`../../Portfolio`, `../../UserDirectory`, `../../SharedUI`, `../../Api`, `../../Cms`; the API and the CMS each with their own PostgreSQL, `api-db` and `cms-db`; the CMS adds the sites' content to an empty database on its first start) and puts them behind a small [Caddy](https://caddyserver.com) proxy that routes by host name. It's for testing on your machine only. On the VPS each site is its own Coolify app, and Coolify's proxy does the routing and HTTPS.
 
-The two Next.js builds install `@thebensage-dev/ui` from GitHub Packages, so they need **`NODE_AUTH_TOKEN`**: a classic GitHub token with only the `read:packages` scope (github.com → Settings → Developer settings → Personal access tokens → Tokens (classic)). Put it in `local/.env`, which is gitignored and read by Compose automatically:
+The three Next.js builds (Portfolio, the User Directory and the CMS) install `@thebensage-dev/ui` from GitHub Packages, so they need **`NODE_AUTH_TOKEN`**: a classic GitHub token with only the `read:packages` scope (github.com → Settings → Developer settings → Personal access tokens → Tokens (classic)). Put it in `local/.env`, which is gitignored and read by Compose automatically:
 
 ```powershell
 cd local
@@ -274,9 +275,10 @@ The same `docker compose up` also starts authentik (`identity/`) and the monitor
 | URL                              | Goes to                                                               |
 | -------------------------------- | --------------------------------------------------------------------- |
 | http://localhost:8080            | Portfolio                                                             |
-| http://users.localhost:8080      | User Directory (its demo people come from the API)                    |
-| http://ui.localhost:8080         | Storybook for `@thebensage-dev/ui`                                       |
-| http://api.localhost:8080        | The API's docs (Scalar); "Authentication" signs in through authentik   |
+| http://users.localhost:8080      | User Directory (its demo users come from the API)                     |
+| http://ui.localhost:8080         | Storybook for `@thebensage-dev/ui`                                    |
+| http://api.localhost:8080        | The API's docs (Scalar); "Authentication" signs in through authentik  |
+| http://cms.localhost:8080/admin  | The CMS (Payload): sign in through authentik as `akadmin`             |
 | http://id.localhost:8080         | authentik: sign in as `akadmin` with the password from `local/.env`   |
 | http://grafana.localhost:8080    | Grafana: "Sign in with authentik", or `admin` / `admin` as a fallback |
 | http://prometheus.localhost:8080 | Prometheus (Status > Targets shows every scrape)                      |
@@ -287,9 +289,9 @@ The same `docker compose up` also starts authentik (`identity/`) and the monitor
 
 The Compose project is called `server` (Docker only accepts lowercase project names), so Docker Desktop lists everything under **server**. Each container has a fixed name, the same as its service apart from `authentik` (the `authentik-server` service): `docker logs grafana`, `docker exec -it authentik-db psql -U authentik`. Those names are set only in `local/` (`compose.yaml` and the two override files); on the VPS Coolify names the containers itself, so the deployed compose files leave them out.
 
-Stop it with `docker compose down`. Data is kept in the volumes (`server_api-db`, which holds the people, and the two above); `docker compose down -v` wipes them. Disk metrics for `/` don't exist on Docker Desktop, so that dashboard panel stays empty locally.
+Stop it with `docker compose down`. Data is kept in the volumes (`server_api-db`, which holds the users, and the two above); `docker compose down -v` wipes them. Disk metrics for `/` don't exist on Docker Desktop, so that dashboard panel stays empty locally.
 
-If port 8080 is taken, set `PROXY_PORT` in the same `local/.env`, and change the port in `GRAFANA_URL` and `AUTHENTIK_URL` (`local/monitoring.env`), the four URLs in `local/identity.env` and the issuer and authority in `local/compose.yaml`. The stack expects the five repos as sibling folders.
+If port 8080 is taken, set `PROXY_PORT` in the same `local/.env`, and change the port in `GRAFANA_URL` and `AUTHENTIK_URL` (`local/monitoring.env`), the four URLs in `local/identity.env` and the issuer and authority in `local/compose.yaml`. The stack expects the six repos as sibling folders.
 
 ## Testing the VPS stacks locally
 

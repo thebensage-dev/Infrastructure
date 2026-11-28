@@ -1,6 +1,6 @@
 # LOCAL ONLY: every site behind one Caddy proxy, built from the sibling repos. Never deploy
 # this to Coolify, where each site is its own app. Usage and URLs: README, "Running all the
-# sites locally". It expects the five repos as sibling folders.
+# sites locally". It expects the six repos as sibling folders.
 # The Compose project: Docker Desktop groups the containers under it, and the volumes are named
 # server_<volume>. Docker only accepts lowercase project names.
 name: server
@@ -37,6 +37,7 @@ services:
       - user-directory
       - storybook
       - api
+      - cms
     restart: unless-stopped
 
   portfolio:
@@ -61,6 +62,12 @@ services:
       # The public Grafana "Live status" link; Grafana shares it on start with the
       # STATUS_ACCESS_TOKEN from monitoring.env.
       STATUS_URL: http://grafana.localhost:${PROXY_PORT:-8080}/public-dashboards/10ca1000000000000000000000000000
+      # Every page's content comes from the CMS below (published pages, cached for a minute).
+      CMS_URL: http://cms:3000
+      # Where the browser reaches the CMS: its Live Preview may frame this site while previewing.
+      CMS_PUBLIC_URL: http://cms.localhost:${PROXY_PORT:-8080}
+      # The CMS's Preview button (the same placeholder as the CMS's).
+      PREVIEW_SECRET: local-only-not-a-secret-cms-preview
     restart: unless-stopped
 
   user-directory:
@@ -71,7 +78,7 @@ services:
     depends_on:
       - api
     environment:
-      # The People API below holds the data (and adds the demo people).
+      # The API below holds the data (and adds the demo users).
       API_URL: http://api:8080
       # Sign-in through the local authentik, needed to add, edit or delete. The client is created
       # by authentik's blueprint with the same placeholder secret (identity.env).
@@ -85,6 +92,10 @@ services:
       MAIN_SITE_URL: http://localhost:${PROXY_PORT:-8080}
       # Encrypts the session cookie. Local only; production sets its own in Coolify.
       AUTH_SECRET: local-only-not-a-secret-user-directory-session-key
+      # Every page comes from the CMS below.
+      CMS_URL: http://cms:3000
+      CMS_PUBLIC_URL: http://cms.localhost:${PROXY_PORT:-8080}
+      PREVIEW_SECRET: local-only-not-a-secret-cms-preview
     restart: unless-stopped
 
   storybook:
@@ -127,10 +138,62 @@ services:
       - api-db:/var/lib/postgresql
     restart: unless-stopped
 
+  cms:
+    container_name: cms
+    # Payload CMS (../../Cms), with its own PostgreSQL below. Admin at cms.localhost:8080/admin,
+    # signed in through the local authentik (cms-editors or authentik Admins, so akadmin works).
+    build:
+      context: ../../Cms
+      secrets: [NODE_AUTH_TOKEN]
+    depends_on:
+      cms-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://cms:local-only-not-a-secret-cms-db@cms-db:5432/cms
+      PAYLOAD_SECRET: local-only-not-a-secret-cms-payload-key
+      APP_URL: http://cms.localhost:${PROXY_PORT:-8080}
+      # The first start on an empty database adds the sites' current content.
+      SEED_CONTENT: "true"
+      # Signs the admin's Preview links; the sites use the same value to read drafts.
+      PREVIEW_SECRET: local-only-not-a-secret-cms-preview
+      # The admin's Preview button opens the page on its site.
+      PORTFOLIO_URL: http://localhost:${PROXY_PORT:-8080}
+      USER_DIRECTORY_URL: http://users.localhost:${PROXY_PORT:-8080}
+      # Sign-in through the local authentik. The client is created by authentik's blueprint with
+      # the same placeholder secret (identity.env).
+      OIDC_ISSUER_URL: http://id.localhost:${PROXY_PORT:-8080}/application/o/cms/
+      OIDC_INTERNAL_URL: http://authentik-server:9000
+      OIDC_CLIENT_ID: cms
+      OIDC_CLIENT_SECRET: local-only-not-a-secret-cms-oidc
+      AUTH_SECRET: local-only-not-a-secret-cms-session-key
+    volumes:
+      # The uploaded images (the Media collection).
+      - cms-media:/app/media
+    restart: unless-stopped
+
+  cms-db:
+    container_name: cms-db
+    image: postgres:18.7-alpine
+    environment:
+      POSTGRES_DB: cms
+      POSTGRES_USER: cms
+      POSTGRES_PASSWORD: local-only-not-a-secret-cms-db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d cms -U cms"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - cms-db:/var/lib/postgresql
+    restart: unless-stopped
+
 secrets:
   NODE_AUTH_TOKEN:
     environment: NODE_AUTH_TOKEN
 
 volumes:
-  # Survives `docker compose down`; `docker compose down -v` wipes it.
+  # Survive `docker compose down`; `docker compose down -v` wipes them.
   api-db:
+  cms-db:
+  cms-media:

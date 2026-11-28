@@ -23,6 +23,11 @@ sites:
     checks:
       # Also checks its PostgreSQL.
       - https://api.{domain}/health
+  - name: CMS
+    repo: thebensage-dev/Cms
+    checks:
+      # Also checks its PostgreSQL.
+      - https://cms.{domain}/health
 
 # Checked too, but deployed by this repo: authentik's readiness (it also covers its database).
 platform_checks:

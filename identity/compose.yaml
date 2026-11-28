@@ -99,6 +99,9 @@ services:
       USER_DIRECTORY_URL: ${USER_DIRECTORY_URL:?set USER_DIRECTORY_URL}
       USER_DIRECTORY_OIDC_CLIENT_SECRET: ${USER_DIRECTORY_OIDC_CLIENT_SECRET:?set USER_DIRECTORY_OIDC_CLIENT_SECRET}
       PORTFOLIO_OIDC_CLIENT_SECRET: ${PORTFOLIO_OIDC_CLIENT_SECRET:?set PORTFOLIO_OIDC_CLIENT_SECRET}
+      # The CMS (Payload, client "cms"), where the sites' content is edited.
+      CMS_URL: ${CMS_URL:?set CMS_URL}
+      CMS_OIDC_CLIENT_SECRET: ${CMS_OIDC_CLIENT_SECRET:?set CMS_OIDC_CLIENT_SECRET}
       # The API's docs page signs in from here (a public client, so no secret).
       API_URL: ${API_URL:?set API_URL}
       # The main site (Portfolio, client "portfolio"); also linked from the sign-up forms.

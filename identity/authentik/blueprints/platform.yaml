@@ -1,15 +1,15 @@
 # yaml-language-server: $schema=https://goauthentik.io/blueprints/schema.json
 # Everything authentik needs, in one blueprint (blueprints that depend on each other can hang
-# authentik's worker when applied together): groups, the Grafana, User Directory, API and
-# Portfolio sign-in apps, the sign-in pages, guest invitations and the shared "Request access"
+# authentik's worker when applied together): groups, the Grafana, User Directory, API,
+# Portfolio and CMS sign-in apps, the sign-in pages, guest invitations and the shared "Request access"
 # (one account for every app, approved app by app).
 #
 # Single sign-on, and who may use what: anyone with an authentik account can sign in to the User
 # Directory, the API and Portfolio (no group rules on those apps), so the apps' silent sign-in
 # check (prompt=none) always comes straight back. Each app then decides what the person may do
 # from the `groups` claim in the token (profile scope): user-directory-editors, api-editors,
-# portfolio-members, and authentik Admins for everything. Only Grafana keeps group rules here,
-# because it is the owner's own tool.
+# portfolio-members, and authentik Admins for everything. Only Grafana and the CMS keep group
+# rules here, because they are the owner's own tools (and neither runs a silent sign-in check).
 # Applied by the worker on start, when this file changes, and hourly. Change this file rather
 # than these objects in the UI: the next apply puts the values below back.
 version: 1
@@ -118,6 +118,20 @@ entries:
     id: portfolio-members
     identifiers:
       name: portfolio-members
+    attrs:
+      is_superuser: false
+  # Who may edit the sites' content in the CMS, and who may only look round it (drafts included).
+  # Both are added by hand; they can't be requested.
+  - model: authentik_core.group
+    id: cms-editors
+    identifiers:
+      name: cms-editors
+    attrs:
+      is_superuser: false
+  - model: authentik_core.group
+    id: cms-viewers
+    identifiers:
+      name: cms-viewers
     attrs:
       is_superuser: false
 
@@ -385,6 +399,80 @@ entries:
       provider: !KeyOf portfolio-provider
       meta_launch_url: !Env MAIN_SITE_URL
       meta_description: The main site, with its colour palette for members
+
+  # --- CMS ------------------------------------------------------------------------------------
+  # Payload CMS at cms.<domain>, where the sites' content is edited. Only cms-editors,
+  # cms-viewers (read-only) and authentik Admins may sign in: the group rules below refuse everyone
+  # else here, and the CMS checks the token's groups again itself and gives each its role. It runs no silent sign-in check, so authentik's
+  # "access denied" page (see the top of this file) is the right answer for anyone else.
+  - model: authentik_providers_oauth2.oauth2provider
+    id: cms-provider
+    identifiers:
+      name: CMS
+    attrs:
+      authorization_flow:
+        !Find [
+          authentik_flows.flow,
+          [slug, default-provider-authorization-implicit-consent],
+        ]
+      invalidation_flow:
+        !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      client_type: confidential
+      grant_types: [authorization_code, refresh_token]
+      client_id: cms
+      client_secret: !Env CMS_OIDC_CLIENT_SECRET
+      redirect_uris:
+        - matching_mode: strict
+          url: !Format ["%s/auth/callback", !Env CMS_URL]
+          redirect_uri_type: authorization
+      property_mappings:
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-openid],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-email],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-profile],
+          ]
+      signing_key:
+        !Find [
+          authentik_crypto.certificatekeypair,
+          [name, authentik Self-signed Certificate],
+        ]
+      include_claims_in_id_token: true
+  - model: authentik_core.application
+    id: cms-app
+    identifiers:
+      slug: cms
+    attrs:
+      name: CMS
+      provider: !KeyOf cms-provider
+      meta_launch_url: !Format ["%s/admin", !Env CMS_URL]
+      meta_description: Edit the sites' pages, projects, header and footer
+      # Any one matching group binding below lets the user in; everyone else is refused.
+      policy_engine_mode: any
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf cms-app
+      group: !KeyOf cms-editors
+    attrs:
+      order: 0
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf cms-app
+      group: !KeyOf cms-viewers
+    attrs:
+      order: 1
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf cms-app
+      group: !Find [authentik_core.group, [name, authentik Admins]]
+    attrs:
+      order: 2
 
   # --- Login page -----------------------------------------------------------------------------
   # Username or email and password on one screen, and passkeys offered straight away by the
@@ -674,8 +762,9 @@ entries:
   # account works straight away, so they come back to the app signed in, but they can't do
   # anything yet. Everyone, new or already signed in, then ticks the apps they'd like:
   #   portfolio      -> portfolio-members       (the colour palette)
-  #   user-directory -> user-directory-editors  (add, edit and delete people)
+  #   user-directory -> user-directory-editors  (add, edit and delete users)
   #   api            -> api-editors             (send real requests from the API docs)
+  #   cms            -> cms-viewers             (look round the CMS, read-only; editors are added by hand)
   # The picks are kept on the user (attribute `requested_apps`), the person gets a "we've got your
   # request" email and the admins a request email (plus the notification bell for new accounts).
   #
@@ -788,7 +877,7 @@ entries:
       name: request-access-app-user-directory
     attrs:
       field_key: app_user_directory
-      label: "User Directory: add, edit and delete people"
+      label: "User Directory: add, edit and delete users"
       type: checkbox
       # Ticked when it says anything ("on"); empty = not ticked (authentik's checkbox rule).
       required: false
@@ -809,6 +898,19 @@ entries:
       initial_value_expression: true
       order: 2
   - model: authentik_stages_prompt.prompt
+    id: request-access-app-cms
+    identifiers:
+      name: request-access-app-cms
+    attrs:
+      field_key: app_cms
+      label: "CMS: look round the editor behind the sites (read-only)"
+      type: checkbox
+      # Ticked when it says anything ("on"); empty = not ticked (authentik's checkbox rule).
+      required: false
+      initial_value: return "on" if (http_request.session.get("authentik/flows/get") or {}).get("app") == "cms" else ""
+      initial_value_expression: true
+      order: 3
+  - model: authentik_stages_prompt.prompt
     id: request-access-field-reason
     identifiers:
       name: request-access-field-reason
@@ -818,7 +920,7 @@ entries:
       type: text_area
       required: false
       placeholder: A sentence is plenty, e.g. "Recruiter at …, trying out your demo"
-      order: 3
+      order: 4
 
   # At least one box ticked.
   - model: authentik_policies_expression.expressionpolicy
@@ -828,7 +930,7 @@ entries:
     attrs:
       expression: |
         data = request.context.get("prompt_data", {})
-        if not any(data.get(key) for key in ("app_portfolio", "app_user_directory", "app_api")):
+        if not any(data.get(key) for key in ("app_portfolio", "app_user_directory", "app_api", "app_cms")):
             ak_message("Tick at least one app.")
             return False
         return True
@@ -842,6 +944,7 @@ entries:
         - !KeyOf request-access-app-portfolio
         - !KeyOf request-access-app-user-directory
         - !KeyOf request-access-app-api
+        - !KeyOf request-access-app-cms
         - !KeyOf request-access-field-reason
       validation_policies:
         - !KeyOf request-access-picked
@@ -860,6 +963,7 @@ entries:
               "portfolio": ("Portfolio", "%s", "portfolio-members", "%s/auth/login?returnTo=%%2F%%3Faccess%%3Drequested"),
               "user-directory": ("User Directory", "%s", "user-directory-editors", "%s/auth/login?returnTo=%%2Fusers%%3Faccess%%3Drequested"),
               "api": ("API", "%s/docs/", "api-editors", "%s/docs/"),
+              "cms": ("CMS", "%s/admin", "cms-viewers", "%s/admin"),
           }
           plan = request.context.get("flow_plan")
           data = request.context.get("prompt_data", {})
@@ -907,6 +1011,8 @@ entries:
         - !Env USER_DIRECTORY_URL
         - !Env API_URL
         - !Env API_URL
+        - !Env CMS_URL
+        - !Env CMS_URL
         - !Env [AUTHENTIK_BRAND_TITLE, TheBensage]
         - !Env MAIN_SITE_URL
         - !Env [ALERT_EMAIL_TO, ""]
@@ -1400,6 +1506,7 @@ entries:
               "portfolio": "%s/",
               "user-directory": "%s/users",
               "grafana": "%s/",
+              "cms": "%s/admin",
           }
           plan = request.context.get("flow_plan")
           app = (request.http_request.session.get("authentik/flows/get") or {}).get("app") if request.http_request else None
@@ -1412,6 +1519,7 @@ entries:
         - !Env MAIN_SITE_URL
         - !Env USER_DIRECTORY_URL
         - !Env GRAFANA_URL
+        - !Env CMS_URL
   - model: authentik_flows.flowstagebinding
     identifiers:
       target: !KeyOf sign-out-flow
@@ -1432,7 +1540,7 @@ entries:
     attrs:
       policy: !KeyOf sign-out-return
 
-  # Every provider signs out through it; the two Next.js apps also take the front-channel logout.
+  # Every provider signs out through it; the Next.js apps also take the front-channel logout.
   - model: authentik_providers_oauth2.oauth2provider
     identifiers:
       name: Grafana
@@ -1457,6 +1565,13 @@ entries:
       invalidation_flow: !KeyOf sign-out-flow
       logout_method: frontchannel
       logout_uri: !Format ["%s/auth/frontchannel-logout", !Env MAIN_SITE_URL]
+  - model: authentik_providers_oauth2.oauth2provider
+    identifiers:
+      name: CMS
+    attrs:
+      invalidation_flow: !KeyOf sign-out-flow
+      logout_method: frontchannel
+      logout_uri: !Format ["%s/auth/frontchannel-logout", !Env CMS_URL]
 
   # --- Tell the admins about new requests ------------------------------------------------------
   - model: authentik_policies_event_matcher.eventmatcherpolicy
@@ -1505,6 +1620,7 @@ entries:
               "portfolio": ("Portfolio", "%s", "portfolio-members"),
               "user-directory": ("User Directory", "%s/users", "user-directory-editors"),
               "api": ("API", "%s/docs/", "api-editors"),
+              "cms": ("CMS", "%s/admin", "cms-viewers"),
           }
           from authentik.core.models import User
           from authentik.lib.config import CONFIG
@@ -1526,6 +1642,7 @@ entries:
         - !Env MAIN_SITE_URL
         - !Env USER_DIRECTORY_URL
         - !Env API_URL
+        - !Env CMS_URL
         - !Env [AUTHENTIK_BRAND_TITLE, TheBensage]
         - !Env MAIN_SITE_URL
   - model: authentik_events.notificationrule

@@ -56,6 +56,8 @@ jobs:
       GRAFANA_OIDC_CLIENT_SECRET: ci-placeholder
       USER_DIRECTORY_OIDC_CLIENT_SECRET: ci-placeholder
       PORTFOLIO_OIDC_CLIENT_SECRET: ci-placeholder
+      CMS_URL: https://cms.example.com
+      CMS_OIDC_CLIENT_SECRET: ci-placeholder
       MONITORED_SITES: https://example.com
       SMTP_HOST: smtp.example.com
       SMTP_USERNAME: ci
@@ -222,6 +224,8 @@ jobs:
           APP_ENV_GRAFANA_OIDC_CLIENT_SECRET: derive:grafana-oidc
           APP_ENV_USER_DIRECTORY_OIDC_CLIENT_SECRET: derive:user-directory-oidc
           APP_ENV_PORTFOLIO_OIDC_CLIENT_SECRET: derive:portfolio-oidc
+          APP_ENV_CMS_URL: https://cms.${{ vars.DOMAIN }}
+          APP_ENV_CMS_OIDC_CLIENT_SECRET: derive:cms-oidc
           APP_ENV_AUTHENTIK_BOOTSTRAP_EMAIL: ${{ vars.ALERT_EMAIL_TO }}
           # Access-request emails, through the same SMTP account as Grafana's alerts.
           APP_ENV_ALERT_EMAIL_FROM: ${{ vars.ALERT_EMAIL_FROM }}
