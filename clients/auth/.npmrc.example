@@ -1,0 +1,4 @@
+# Only needed to publish by hand (CI publishes with its own token). Copy to .npmrc (gitignored)
+# and use a classic GitHub token with the write:packages scope.
+@thebensage-dev:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=ghp_your_token

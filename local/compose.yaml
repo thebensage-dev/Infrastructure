@@ -156,9 +156,8 @@ services:
       SEED_CONTENT: "true"
       # Signs the admin's Preview links; the sites use the same value to read drafts.
       PREVIEW_SECRET: local-only-not-a-secret-cms-preview
-      # The admin's Preview button opens the page on its site.
-      PORTFOLIO_URL: http://localhost:${PROXY_PORT:-8080}
-      USER_DIRECTORY_URL: http://users.localhost:${PROXY_PORT:-8080}
+      # The main domain's address: each site is on its subdomain of it (Preview, the site list).
+      SITES_URL: http://localhost:${PROXY_PORT:-8080}
       # Sign-in through the local authentik. The client is created by authentik's blueprint with
       # the same placeholder secret (identity.env).
       OIDC_ISSUER_URL: http://id.localhost:${PROXY_PORT:-8080}/application/o/cms/

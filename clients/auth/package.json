@@ -1,0 +1,56 @@
+{
+  "name": "@thebensage-dev/auth",
+  "version": "0.1.0",
+  "description": "Sign-in through TheBensage's authentik for a Next.js app: OpenID Connect with PKCE, an encrypted session cookie, silent single sign-on and single logout.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thebensage-dev/Infrastructure.git",
+    "directory": "clients/auth"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./proxy": {
+      "types": "./dist/proxy-entry.d.ts",
+      "default": "./dist/proxy-entry.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
+    "check": "npm run format:check && npm run typecheck && npm run test && npm run build",
+    "prepack": "npm run build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "jose": "^6.2.18",
+    "openid-client": "^6.9.1"
+  },
+  "peerDependencies": {
+    "next": "^16.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.11",
+    "next": "16.4.6",
+    "prettier": "^3.10.1",
+    "typescript": "~6.0.3"
+  }
+}

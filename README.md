@@ -4,11 +4,12 @@ Monitoring and sign-in for the sites on the Coolify VPS (Portfolio, the User Dir
 
 ## What is in this repo
 
-| Folder        | What it runs                                                                                                                                                                                                                                                                                    | URL                     |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| `monitoring/` | **Prometheus** collects metrics and **Loki** stores every container's logs (sent by **Alloy**). **Grafana** shows dashboards and logs and sends alerts. Three small exporters feed Prometheus: blackbox (site checks), node (the VPS) and cAdvisor (each container).                            | `grafana.<domain>` only |
-| `identity/`   | **authentik**: single sign-on (OIDC) for Portfolio, the User Directory, the API, Grafana and later tools. Passwords plus optional passkeys and two-factor, groups, one shared "Request access" page where people pick apps and you approve each one (with emails), and invite links for guests. | `id.<domain>`           |
-| `local/`      | **Local only, never deployed.** Portfolio, User Directory, Storybook, the API and the CMS built from the sibling repos, behind a Caddy proxy.                                                                                                                                                            | `localhost:8080`        |
+| Folder          | What it runs                                                                                                                                                                                                                                                                                    | URL                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `monitoring/`   | **Prometheus** collects metrics and **Loki** stores every container's logs (sent by **Alloy**). **Grafana** shows dashboards and logs and sends alerts. Three small exporters feed Prometheus: blackbox (site checks), node (the VPS) and cAdvisor (each container).                            | `grafana.<domain>` only |
+| `identity/`     | **authentik**: single sign-on (OIDC) for Portfolio, the User Directory, the API, Grafana and later tools. Passwords plus optional passkeys and two-factor, groups, one shared "Request access" page where people pick apps and you approve each one (with emails), and invite links for guests. | `id.<domain>`           |
+| `clients/auth/` | **`@thebensage-dev/auth`**, the sign-in package Portfolio, the User Directory and the CMS share: OIDC with PKCE against this authentik, the session cookie, silent single sign-on and single logout. Published to GitHub Packages. See its [README](clients/auth/README.md).                    | none                    |
+| `local/`        | **Local only, never deployed.** Portfolio, User Directory, Storybook, the API and the CMS built from the sibling repos, behind a Caddy proxy.                                                                                                                                                   | `localhost:8080`        |
 
 Coolify's own features cover the rest: deploy failures, server disk usage and "server unreachable" notifications, and live container logs on each app's Logs tab (recent lines only; Grafana keeps 14 days of every container's logs, searchable together).
 
@@ -68,7 +69,7 @@ Measured locally: about 850 MB of RAM for monitoring, most of it Grafana (~590 M
 
 ## CI
 
-One workflow, `.github/workflows/ci.yml` ("CI"), with the same shape as the other repos:
+`.github/workflows/ci.yml` ("CI") deploys the stacks, with the same shape as the other repos. A second workflow, `auth.yml` ("Auth package"), checks `clients/auth` and publishes a new version of it; changes there never redeploy a stack.
 
 | Job                         | Runs on                        | What it does                                                                                                                                                                                  |
 | --------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -78,7 +79,7 @@ One workflow, `.github/workflows/ci.yml` ("CI"), with the same shape as the othe
 | **Deploy to Coolify**       | after your approval            | Checks every deploy value is set, then deploys identity (first) and/or monitoring through `.github/actions/coolify-deploy`, pinned to this commit, and waits for Coolify to finish.           |
 | **Redeploy the sites**      | manual run with the box ticked | Starts each site's own CI on `main` from `sites.yml` (needs `SITES_DISPATCH_TOKEN`).                                                                                                          |
 
-The identity build downloads SharedUI's `brand/` files from its release tag (`SHAREDUI_REF` in `identity/authentik/Dockerfile`), so **Check** can only pass once SharedUI is public on GitHub and its tag (`v1.0.0`) exists. `.github/dependabot.yml` opens weekly PRs for image tags (Dockerfiles and compose files) and actions.
+The identity build downloads SharedUI's `brand/` files from its release tag (`SHAREDUI_REF` in `identity/authentik/Dockerfile`), so **Check** can only pass once SharedUI is public on GitHub and its tag (`v1.0.0`) exists. `.github/dependabot.yml` opens weekly PRs for image tags (Dockerfiles and compose files), actions and the auth package's npm dependencies.
 
 ## Deploying
 

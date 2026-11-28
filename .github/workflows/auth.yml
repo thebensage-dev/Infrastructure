@@ -1,0 +1,106 @@
+# The sign-in package (clients/auth, @thebensage-dev/auth), used by Portfolio, UserDirectory and Cms.
+#   check:   the package's typecheck, tests and build.
+#   publish: on main, publishes the package when its package.json version isn't on GitHub Packages
+#            yet, then tags the commit auth-v<version>. A release is a version bump.
+name: Auth package
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: auth-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: clients/auth
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+      - name: Set up Node (version from .nvmrc)
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: clients/auth/.nvmrc
+          cache: npm
+          cache-dependency-path: clients/auth/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Check (types, tests, build)
+        run: npm run check
+
+  publish:
+    name: Publish package
+    needs: check
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # push the release tag
+      packages: write
+    concurrency:
+      group: auth-publish
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: clients/auth
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+      - name: Set up Node (version from .nvmrc)
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: clients/auth/.nvmrc
+          cache: npm
+          cache-dependency-path: clients/auth/package-lock.json
+          registry-url: https://npm.pkg.github.com
+          scope: "@thebensage-dev"
+      - name: Check whether this version is already published
+        id: version
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if out=$(npm view "$name@$version" version 2>&1); then
+            if [ -n "$out" ]; then
+              echo "$name@$version is already published, nothing to do."
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          elif ! grep -q E404 <<<"$out"; then
+            echo "$out"
+            echo "::error::Couldn't read $name from GitHub Packages. Give this repo access in the package's settings > Manage Actions access."
+            exit 1
+          fi
+          echo "$name@$version isn't published yet, publishing it."
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+      - name: Install dependencies
+        if: steps.version.outputs.publish == 'true'
+        run: npm ci
+      - name: Publish to GitHub Packages
+        if: steps.version.outputs.publish == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm publish
+      - name: Tag the release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          TAG: auth-v${{ steps.version.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG already exists."
+          else
+            git tag "$TAG" && git push origin "$TAG"
+          fi

@@ -6,3 +6,6 @@
 *.png binary
 *.jpg binary
 *.sqlite binary
+
+# The authentik email templates are HTML; keep them out of the GitHub language bar.
+identity/authentik/templates/** linguist-detectable=false

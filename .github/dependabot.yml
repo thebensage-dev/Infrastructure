@@ -1,8 +1,8 @@
 # Weekly PRs for newer image tags, one grouped PR per ecosystem. Read the release notes before
 # merging. Prometheus stays on its 3.13 LTS line, Node on its LTS major, and PostgreSQL on 16;
 # authentik is pinned to an exact release and upgrades only one minor line at a time (e.g.
-# 2026.8 -> 2026.11), so never skip a line when merging. No npm here: the authentik Dockerfile
-# only installs sharp (pinned there) in its build stage.
+# 2026.8 -> 2026.11), so never skip a line when merging. The only npm project is the sign-in
+# package (clients/auth); the authentik Dockerfile installs sharp (pinned there) in its build stage.
 version: 2
 updates:
   # FROM lines in the Dockerfiles (Prometheus, Grafana, blackbox exporter, Loki, Alloy, authentik
@@ -58,3 +58,20 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  # The sign-in package (clients/auth, @thebensage-dev/auth).
+  - package-ecosystem: npm
+    directory: /clients/auth
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    ignore:
+      # The same pins as the other Node repos: TypeScript ~6.0, Node's types on the LTS major.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
