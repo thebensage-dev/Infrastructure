@@ -1,4 +1,4 @@
-FROM grafana/grafana:13.3.1
+FROM grafana/grafana:13.3.2
 COPY provisioning /etc/grafana/provisioning
 COPY dashboards /etc/grafana/dashboards
 # Makes the "Live status" dashboard public at a fixed link on every start (STATUS_ACCESS_TOKEN),
